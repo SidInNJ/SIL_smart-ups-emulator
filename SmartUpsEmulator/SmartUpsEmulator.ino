@@ -4,7 +4,23 @@
 
 int iIntTimer=0;
 
-// Project located at: C:\Users\User\Documents\Arduino\SIL_GTIS\SmartUPS
+// For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
+/*
+Todo: 
+    Board voltage calibration. To EEPROM
+    Via commands, Simulate battery voltage for easy PC comm testing
+  Testing:
+    See if need % left or just the shutdown cmd
+    What kind of shut down does it do? (Sleep: Open app is open on start up)
+    OS's tried so far: Win10 Home, Win10 Pro: Both do Sleep by default.
+    Win10 Pro: I changed config and was able to set it to do a full shutdown.
+    Appears the Shutdown requested/Immenent message is NOT what tells the PC to shut down, but instead the battery level(?)
+    Try RPi Pico (but would need an external EEPROM for production version)
+ 
+  Shutdown config on Win10 Pro: Settings, Power&Sleep, Additional Power Settings (green text in right side of window),
+    For the power plan in use: click "Change plan settings", "Change advanced power settings", scroll down to Battery,
+    Open "Critical battery action", "On battery:" use pulldown to select desired action.
+*/
 
 // String constants 
 const char STRING_DEVICECHEMISTRY[] PROGMEM = "PbAc";
@@ -15,6 +31,7 @@ const byte bDeviceChemistry = IDEVICECHEMISTRY;
 const byte bOEMVendor = IOEMVENDOR;
 
 uint16_t iPresentStatus = 0, iPreviousStatus = 0;
+bool bForceShutdownPrior = false;
 
 byte bRechargable = 1;
 byte bCapacityMode = 2;  // units are in %%
@@ -58,6 +75,7 @@ void setup() {
   PowerDevice.setOutput(Serial);
   
   pinMode(4, INPUT_PULLUP); // ground this pin to simulate power failure. 
+  pinMode(6, INPUT_PULLUP); // ground this pin to send only the shutdown command without changing bat charge
   pinMode(5, OUTPUT);  // output flushing 1 sec indicating that the arduino cycle is running. 
   pinMode(10, OUTPUT); // output is on once commuication is lost with the host, otherwise off.
 
@@ -96,6 +114,7 @@ void loop() {
   
   //*********** Measurements Unit ****************************
   bool bCharging = digitalRead(4);
+  bool bForceShutdown = digitalRead(6) ? false : true;
   bool bACPresent = bCharging;    // TODO - replace with sensor
   bool bDischarging = !bCharging; // TODO - replace with sensor
   int iA7 = analogRead(A0);       // TODO - this is for debug only. Replace with charge estimation
@@ -169,6 +188,11 @@ void loop() {
   else
     bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
 
+  if (bForceShutdown)
+  {
+      bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+  }
+
   // Shutdown imminent
   if((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) || 
      (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED))) {
@@ -198,7 +222,8 @@ void loop() {
 
   //************ Bulk send or interrupt ***********************
 
-  if((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer>MINUPDATEINTERVAL) ) {
+  if((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer>MINUPDATEINTERVAL) 
+     || (bForceShutdownPrior != bForceShutdown)) {
 
     PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
     if(bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
@@ -214,11 +239,17 @@ void loop() {
     iPreviousStatus = iPresentStatus;
     iPrevRemaining = iRemaining;
     iPrevRunTimeToEmpty = iRunTimeToEmpty;
+    bForceShutdownPrior = bForceShutdown;
   }
   
 
+  Serial.print("Remaining: ");
   Serial.println(iRemaining);
-  Serial.println(iRunTimeToEmpty);
+  Serial.print("To Empty mm:ss ");
+  Serial.print(iRunTimeToEmpty/60);
+  Serial.print(":");
+  Serial.println(iRunTimeToEmpty%60);
+  Serial.print("Communications state with PC (negative=bad): ");
   Serial.println(iRes);
   
 }
