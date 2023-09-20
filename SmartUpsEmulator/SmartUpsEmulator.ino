@@ -117,7 +117,7 @@ void loop() {
   bool bForceShutdown = digitalRead(6) ? false : true;
   bool bACPresent = bCharging;    // TODO - replace with sensor
   bool bDischarging = !bCharging; // TODO - replace with sensor
-  int iA7 = analogRead(A0);       // TODO - this is for debug only. Replace with charge estimation
+  int iA7 = analogRead(A5);       // TODO - this is for debug only. Replace with charge estimation
 
   static uint8_t charIndex = 0;   // For tracking input chars from serial port
   static char inLine[16];
