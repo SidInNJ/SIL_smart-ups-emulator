@@ -1,16 +1,29 @@
-#include <HIDPowerDevice.h>
+//#include <HIDPowerDevice.h>
+#include "HIDPowerDevice.h"
+#include "TimerHelpers.h"
+
+#include "HandyHelpers.h"
+HandyHelpers MH; // My Handy Helper
 
 #define MINUPDATEINTERVAL   26
 
 int iIntTimer = 0;
 
-// For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
+#define PIN_BAT_VOLTAGE A5
+
+
+/*
+ For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
+ arduino-cli compile --warnings more --fqbn arduino:avr:mega SmartUpsEmulator\SmartUpsEmulator.ino
+ */
+
 /*
 Todo: 
     Board voltage calibration. To EEPROM
     Via commands, Simulate battery voltage for easy PC comm testing
+    Enable Watchdog
   Testing:
-    See if need % left or just the shutdown cmd
+    See if need % left or just the shutdown cmd: Appeard to be % left.
     What kind of shut down does it do? (Sleep: Open app is open on start up)
     OS's tried so far: Win10 Home, Win10 Pro: Both do Sleep by default.
     Win10 Pro: I changed config and was able to set it to do a full shutdown.
@@ -21,6 +34,11 @@ Todo:
     For the power plan in use: click "Change plan settings", "Change advanced power settings", scroll down to Battery,
     Open "Critical battery action", "On battery:" use pulldown to select desired action.
 */
+
+bool doDebugPrints = true;  // Enable printing by default
+#define DBPRINTLN(args...) if(doDebugPrints) { Serial.println(args);}
+#define DBPRINT(args...)   if(doDebugPrints) { Serial.print(args);}
+#define DBWRITE(args...)   if(doDebugPrints) { Serial.write(args);}
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -39,10 +57,7 @@ byte bCapacityMode = 2;  // units are in %%
 // Physical parameters
 const uint16_t iConfigVoltage = 1380;
 uint16_t iVoltage = 1300, iPrevVoltage = 0;
-uint16_t iRunTimeToEmpty = 0, iPrevRunTimeToEmpty = 0;
-uint16_t iAvgTimeToFull = 7200;
-uint16_t iAvgTimeToEmpty = 7200;
-uint16_t iRemainTimeLimit = 600;
+uint16_t iRunTimeToEmpty = 7200, iPrevRunTimeToEmpty = 0;
 int16_t  iDelayBe4Reboot = -1;
 int16_t  iDelayBe4ShutDown = -1;
 
@@ -51,21 +66,116 @@ byte iAudibleAlarmCtrl = 2; // 1 - Disabled, 2 - Enabled, 3 - Muted
 
 // Parameters for ACPI compliancy
 const byte iDesignCapacity = 100;
-byte iWarnCapacityLimit = 10; // warning at 10%
-byte iRemnCapacityLimit = 5; // low at 5%
 const byte bCapacityGranularity1 = 1;
 const byte bCapacityGranularity2 = 1;
 byte iFullChargeCapacity = 100;
 
-byte iRemaining = 0, iPrevRemaining = 0;
+byte iRemaining = 100, iPrevRemaining = 0;
 
 int iRes = 0;
 
+// Watchdog DOYET
+//#define WATCHDOG_RESET true   // DOYET
+#ifndef WATCHDOG_RESET
+    #define WATCHDOG_RESET
+#endif 
 
-void setup(void)
+#define PROG_NAME_VERSION "Smart UPS Emulator v0.1"
+
+struct CalibPoint
+{
+    uint16_t a2dValue;
+    uint16_t voltage;     // in hundredths of volts
+};
+
+
+/////////////
+// General EEPROM
+//
+#define EEPROM_VALID_PAT1  0xAA
+#define EEPROM_VALID_PAT2  0x55
+#define EEPROM_END_VER_SIG 0xA501
+struct EEPROM_Struct
+{
+    uint8_t     eeValid_1;      // EE is Valid_1: 0xAA
+    uint8_t     eeValid_2;      // EE is Valid_2  0x55
+
+
+    // Physical parameters
+    uint16_t iAvgTimeToFull  ;  // in seconds
+    uint16_t iAvgTimeToEmpty ;  // in seconds
+    uint16_t iRemainTimeLimit;  // in seconds
+    uint16_t batFullVoltage  ;  // in hundredths of volts
+    uint16_t batEmptyVoltage ;  // in hundredths of volts
+
+    // Parameters for ACPI compliancy
+    byte iWarnCapacityLimit;    // warning at 10%
+    byte iRemnCapacityLimit;    // low at 5%
+    bool msgPcEnabled;
+
+    // Board/Resistor Divider Calibration
+    CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
+    CalibPoint  calibPointHigh;
+
+    uint16_t  reserved16_1;
+    uint16_t  reserved16_2;
+    uint16_t  reserved16_3;
+    uint16_t  reserved16_4;
+    uint8_t   reserved8_1;
+    uint8_t   reserved8_2;
+    uint8_t   reserved8_3;
+    uint8_t   reserved8_4;
+
+
+    uint8_t     debugFlags;  // Debug flags 0x01=Skip Early Audio
+    uint16_t    eeVersion;  // Change this if the eeprom layout changes
+};
+
+EEPROM_Struct StoreEE;
+
+////////////////////
+// P R O T O S
+////////////////////
+void handleLaptopInput(void);
+void printHelp(void);
+void watchDogReset(void);
+void printHelp(Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
+void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
+void showPersistentSettings(Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
+void enableDebugPrints(uint8_t debugPrBits);
+#define DBG_PRINT_MAIN      0    // 0x01
+
+Stream *serPtr = &Serial;
+int batVoltage = 1300;
+
+ void setup(void)
 {
 
     Serial.begin(57600);
+
+    delay(500);
+
+    Serial.println();
+    Serial.println(F(PROG_NAME_VERSION));
+    Serial.println("\nCompiled at: " __DATE__ ", " __TIME__);
+    Serial.println("Starting...\n\r");
+
+    // New for GTIS
+    EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
+
+    if ((StoreEE.eeValid_1 == EEPROM_VALID_PAT1) && (StoreEE.eeValid_2 == EEPROM_VALID_PAT2) && (StoreEE.eeVersion == EEPROM_END_VER_SIG)) // Signature Valid?
+    {
+        enableDebugPrints(StoreEE.debugFlags);
+        Serial.println(F("Good: EEPROM is initialized."));
+    }
+    else
+    {
+        Serial.println(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
+        FactoryDefault();
+    }
+
+
+    // Init Watchdog DOYET
 
     PowerDevice.begin();
 
@@ -76,19 +186,23 @@ void setup(void)
     PowerDevice.setOutput(Serial);
 
     pinMode(4, INPUT_PULLUP); // ground this pin to simulate power failure.
-    pinMode(6, INPUT_PULLUP); // ground this pin to send only the shutdown command without changing bat charge
+    //pinMode(6, INPUT_PULLUP); // ground this pin to send only the shutdown command without changing bat charge // Sid added for temperary test
     pinMode(5, OUTPUT);  // output flushing 1 sec indicating that the arduino cycle is running.
     pinMode(10, OUTPUT); // output is on once commuication is lost with the host, otherwise off.
 
+    // Set the first stuff set up to be looking good, so we don't cause a PC shutdown before we get things config'd and working.
+    bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
+    bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+    bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
 
     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
 
-    PowerDevice.setFeature(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
-    PowerDevice.setFeature(HID_PD_AVERAGETIME2FULL, &iAvgTimeToFull, sizeof(iAvgTimeToFull));
-    PowerDevice.setFeature(HID_PD_AVERAGETIME2EMPTY, &iAvgTimeToEmpty, sizeof(iAvgTimeToEmpty));
-    PowerDevice.setFeature(HID_PD_REMAINTIMELIMIT, &iRemainTimeLimit, sizeof(iRemainTimeLimit));
-    PowerDevice.setFeature(HID_PD_DELAYBE4REBOOT, &iDelayBe4Reboot, sizeof(iDelayBe4Reboot));
-    PowerDevice.setFeature(HID_PD_DELAYBE4SHUTDOWN, &iDelayBe4ShutDown, sizeof(iDelayBe4ShutDown));
+    PowerDevice.setFeature(HID_PD_RUNTIMETOEMPTY,    &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
+    PowerDevice.setFeature(HID_PD_AVERAGETIME2FULL,  &StoreEE.iAvgTimeToFull, sizeof(StoreEE.iAvgTimeToFull));
+    PowerDevice.setFeature(HID_PD_AVERAGETIME2EMPTY, &StoreEE.iAvgTimeToEmpty, sizeof(StoreEE.iAvgTimeToEmpty));
+    PowerDevice.setFeature(HID_PD_REMAINTIMELIMIT,   &StoreEE.iRemainTimeLimit, sizeof(StoreEE.iRemainTimeLimit));
+    PowerDevice.setFeature(HID_PD_DELAYBE4REBOOT,    &iDelayBe4Reboot, sizeof(iDelayBe4Reboot));
+    PowerDevice.setFeature(HID_PD_DELAYBE4SHUTDOWN,  &iDelayBe4ShutDown, sizeof(iDelayBe4ShutDown));
 
     PowerDevice.setFeature(HID_PD_RECHARGEABLE, &bRechargable, sizeof(bRechargable));
     PowerDevice.setFeature(HID_PD_CAPACITYMODE, &bCapacityMode, sizeof(bCapacityMode));
@@ -103,150 +217,506 @@ void setup(void)
     PowerDevice.setFeature(HID_PD_DESIGNCAPACITY, &iDesignCapacity, sizeof(iDesignCapacity));
     PowerDevice.setFeature(HID_PD_FULLCHRGECAPACITY, &iFullChargeCapacity, sizeof(iFullChargeCapacity));
     PowerDevice.setFeature(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
-    PowerDevice.setFeature(HID_PD_WARNCAPACITYLIMIT, &iWarnCapacityLimit, sizeof(iWarnCapacityLimit));
-    PowerDevice.setFeature(HID_PD_REMNCAPACITYLIMIT, &iRemnCapacityLimit, sizeof(iRemnCapacityLimit));
+    PowerDevice.setFeature(HID_PD_WARNCAPACITYLIMIT, &StoreEE.iWarnCapacityLimit, sizeof(StoreEE.iWarnCapacityLimit));
+    PowerDevice.setFeature(HID_PD_REMNCAPACITYLIMIT, &StoreEE.iRemnCapacityLimit, sizeof(StoreEE.iRemnCapacityLimit));
     PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY1, &bCapacityGranularity1, sizeof(bCapacityGranularity1));
     PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY2, &bCapacityGranularity2, sizeof(bCapacityGranularity2));
 
-}
+    batVoltage = StoreEE.batFullVoltage;
 
-void loop(void)
-{
-
-
-    //*********** Measurements Unit ****************************
-    bool bCharging = digitalRead(4);
-    bool bForceShutdown = digitalRead(6) ? false : true;
-    bool bACPresent = bCharging;    // TODO - replace with sensor
-    bool bDischarging = !bCharging; // TODO - replace with sensor
-    int iA7 = analogRead(A5);       // TODO - this is for debug only. Replace with charge estimation
-
-    static uint8_t charIndex = 0;   // For tracking input chars from serial port
-    static char inLine[16];
-
-    if (Serial.available() > 0)
+    if (true)
     {
-        char c = Serial.read();
+        bool bCharging = true;
+        bool bACPresent = bCharging;    // TODO - replace with sensor
+        bool bDischarging = !bCharging; // TODO - replace with sensor
 
-        switch (toupper(c))
-        {
-        case 'H':
-            Serial.println("Here's some Help!");
-            break;
-
-        default:
-            Serial.println("Try 'H'");
-            break;
-
-        }
-    }
-
-    //if (charIndex < sizeof(inLine) - 1)
-    //{
-    //    inLine[charIndex] = Serial.read();
-    //    inLine[charIndex + 1] = 0;
-    //}
-
-
-
-    iRemaining = (byte)(round((float)100 * iA7 / 1024));
-    iRunTimeToEmpty = (uint16_t)round((float)iAvgTimeToEmpty * iRemaining / 100);
-
-    // Charging
-    if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
-    else bitClear(iPresentStatus, PRESENTSTATUS_CHARGING);
-    if (bACPresent) bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-    else bitClear(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-    if (iRemaining == iFullChargeCapacity) bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
-    else bitClear(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
-
-    // Discharging
-    if (bDischarging)
-    {
-        bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-        // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
-
-        if (iRunTimeToEmpty < iRemainTimeLimit) bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-        else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-
-    }
-    else
-    {
-        bitClear(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-        bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-    }
-
-    // Shutdown requested
-    if (iDelayBe4ShutDown > 0)
-    {
-        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-        Serial.println("shutdown requested");
-    }
-    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-
-    if (bForceShutdown)
-    {
-        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-    }
-
-    // Shutdown imminent
-    if ((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
-        (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
-    {
-        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-        Serial.println("shutdown imminent");
-    }
-    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-
-
-
-    bitSet(iPresentStatus, PRESENTSTATUS_BATTPRESENT);
-
-
-
-    //************ Delay ****************************************
-    delay(1000);
-    iIntTimer++;
-    digitalWrite(5, HIGH);   // turn the LED on (HIGH is the voltage level);
-    delay(1000);
-    iIntTimer++;
-    digitalWrite(5, LOW);   // turn the LED off;
-
-    //************ Check if we are still online ******************
-
-
-
-    //************ Bulk send or interrupt ***********************
-
-    if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > MINUPDATEINTERVAL)
-        || (bForceShutdownPrior != bForceShutdown))
-    {
-
+        // Send initial report with everything looking good, update in main loop
         PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
         if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
         iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-
-        if (iRes < 0)
-        {
-            digitalWrite(10, HIGH);
-        }
-        else digitalWrite(10, LOW);
-
-        iIntTimer = 0;
-        iPreviousStatus = iPresentStatus;
-        iPrevRemaining = iRemaining;
-        iPrevRunTimeToEmpty = iRunTimeToEmpty;
-        bForceShutdownPrior = bForceShutdown;
+        Serial.println("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
     }
 
+}
 
-    Serial.print("Remaining: ");
-    Serial.println(iRemaining);
-    Serial.print("To Empty mm:ss ");
-    Serial.print(iRunTimeToEmpty / 60);
-    Serial.print(":");
-    Serial.println(iRunTimeToEmpty % 60);
-    Serial.print("Communications state with PC (negative=bad): ");
-    Serial.println(iRes);
+
+Timer_ms timeToUpdate;
+
+void loop(void)
+{
+    WATCHDOG_RESET; // Reset watchdog frequently
+
+    handleLaptopInput();
+
+
+    if (timeToUpdate.StartIfStopped(1000))
+    {
+        //*********** Measurements Unit ****************************
+        bool bCharging = digitalRead(4);
+        //bool bForceShutdown = digitalRead(6) ? false : true;  // Sid added for temperary test
+        bool bACPresent = bCharging;    // TODO - replace with sensor
+        bool bDischarging = !bCharging; // TODO - replace with sensor
+        int iA7 = analogRead(PIN_BAT_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
+
+        //if (true)
+        //{
+        batVoltage = map(iA7, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
+        if (batVoltage < 0)
+            batVoltage = 0;
+
+        // If not enabled: Disable all updates. It seems like just suppressing the sending of reports to the PC isn't enough to 
+        // keep the PC from shutting down when a low voltage is sensed. Interrupt driven something somewhere??
+        // Initially set to disabled to allow for the board to be callibrated, including a zero or low voltage.
+        if (StoreEE.msgPcEnabled)   
+        {
+
+            int iRemainingInt = map(batVoltage, StoreEE.batEmptyVoltage, StoreEE.batFullVoltage, 0, 100);
+            iRemaining = constrain(iRemainingInt, 0, 100);
+            //}
+            //else
+            //{
+            //    iRemaining = (byte)(round((float)100 * iA7 / 1024));
+            //}
+
+            iRunTimeToEmpty = (uint16_t)round((float)StoreEE.iAvgTimeToEmpty * iRemaining / 100);
+
+            // Charging
+            if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
+            else bitClear(iPresentStatus, PRESENTSTATUS_CHARGING);
+            if (bACPresent) bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+            else bitClear(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+            if (iRemaining == iFullChargeCapacity) bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+            else bitClear(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+
+            // Discharging
+            if (bDischarging)
+            {
+                bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
+                // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
+
+                if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit) bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+                else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+
+            }
+            else
+            {
+                bitClear(iPresentStatus, PRESENTSTATUS_DISCHARGING);
+                bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+            }
+
+            // Shutdown requested
+            if (iDelayBe4ShutDown > 0)
+            {
+                bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+                Serial.println("shutdown requested");
+            }
+            else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+
+            //if (bForceShutdown)
+            //{
+            //    bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+            //}
+
+            // Shutdown imminent
+            if ((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
+                (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
+            {
+                bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+                Serial.println("shutdown imminent");
+            }
+            else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+
+
+
+            bitSet(iPresentStatus, PRESENTSTATUS_BATTPRESENT);
+
+
+
+
+            ////************ Delay ****************************************
+            //delay(1000);
+            //iIntTimer++;
+            //digitalWrite(5, HIGH);   // turn the LED on (HIGH is the voltage level);
+            //delay(1000);
+            //iIntTimer++;
+            //digitalWrite(5, LOW);   // turn the LED off;
+            //
+            //************ Check if we are still online ******************
+
+
+
+            //************ Bulk send or interrupt ***********************
+
+            if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > MINUPDATEINTERVAL)
+               /* || (bForceShutdownPrior != bForceShutdown) */
+               )
+            {
+
+                //if (false)
+                //if (StoreEE.msgPcEnabled)
+                //{
+                    PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
+                    if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
+                    iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+                //}
+
+                if (iRes < 0)
+                {
+                    digitalWrite(10, HIGH);
+                }
+                else digitalWrite(10, LOW);
+
+                iIntTimer = 0;
+                iPreviousStatus = iPresentStatus;
+                iPrevRemaining = iRemaining;
+                iPrevRunTimeToEmpty = iRunTimeToEmpty;
+                //bForceShutdownPrior = bForceShutdown;
+            }
+        }//end if (StoreEE.msgPcEnabled)
+
+        if (StoreEE.msgPcEnabled)
+        {
+            Serial.print("Remaining: ");
+            Serial.print(iRemaining);
+            Serial.print(", To Empty mm:ss ");
+            Serial.print(iRunTimeToEmpty / 60);
+            Serial.print(":");
+            Serial.print(iRunTimeToEmpty % 60);
+            Serial.print(", Comm with PC (negative=bad): ");
+            Serial.print(iRes);
+            Serial.print(", ");
+        }
+        Serial.print("BatV*100: ");
+        Serial.println(batVoltage);
+    }
 
 }
+
+void handleLaptopInput(void)
+{
+#define ASCII_CR            0x0D
+#define ASCII_LF            0x0A
+#define ASCII_ESC           0x1B
+
+    static char userIn[MAX_MENU_CHARS];     // MAX_MENU_CHARS Def'd in Maltbie_Helper.h
+    static uint8_t indexUserIn = 0;
+    int inByte;
+
+    while (Serial.available())
+    {
+        inByte = Serial.read();
+        if (doDebugPrints)
+        {
+            Serial.write(inByte);
+        }
+        //if (inByte == ASCII_CR)
+        //{
+        //    Serial.println(F("<CR>"));
+        //}
+
+        if (indexUserIn < MAX_MENU_CHARS)
+        {
+            if (!((inByte == ASCII_CR) || (inByte == ASCII_LF) || (inByte == 0xEF) || (inByte == 0xBB) || (inByte == 0xBF)))    // 0xBF sent by RealTerm before sending a file (why???)
+            {
+                userIn[indexUserIn++] = inByte; // Append the latest character, unless it is a CR or LF
+            }
+
+            userIn[indexUserIn] = 0;
+            //DBPRINT(F("["));
+            //DBPRINT(userIn);
+            //DBPRINTLN(F("]"));
+
+            if (indexUserIn)    // Skip only CR or LF without a real string
+            {
+                processUserInput(userIn, indexUserIn, inByte);
+            }
+        } //end if (indexUserIn<MAX_MENU_CHARS)
+        else
+        {
+            // Attempted to overflow the input buffer, reset it.
+            indexUserIn = 0;
+            userIn[0] = 0;
+        }
+
+        if (indexUserIn == 0)
+        {
+            DBPRINT("\nCmd: ");
+        }
+    } // end if (Serial.available())
+
+}
+
+
+
+void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr, bool handleUsbOnlyOptions)
+{
+    //char delim[] = ",. ";   // delimiters between fields in serial commands
+
+    MH.setSerialOutputStream(serialPtr);    // Send serial output to Serial or to BlueTooth
+
+    if (((inByte == ASCII_CR) || (inByte == ASCII_LF)) && indexUserIn)
+    {
+        char cmdChar = (char)toupper(userIn[0]);
+        switch (cmdChar)
+        {
+
+        case 'E':   // Battery Config
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                case 'N': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 1, StoreEE.msgPcEnabled , "Enable PC Reporting/Shutdown"); break;
+                default:
+                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->println(userIn);
+                    break;
+                }
+            }
+            break;
+        
+        case 'B':   // Battery Config
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batFullVoltage , "Battery Full Charge V"); break;
+                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batEmptyVoltage, "Battery Empty V"      ); break;
+                default:
+                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->println(userIn);
+                    break;
+                }
+            }
+            break;
+
+        case 'T':   // Expected Durations
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                case 'C': 
+                    {
+                        uint16_t minsTemp = StoreEE.iAvgTimeToFull / 60;
+                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, "Minutes to fully charge from dead"   ); 
+                        StoreEE.iAvgTimeToFull = minsTemp * 60;
+                    }
+                    break;
+
+                case 'D': 
+                    {
+                        uint16_t minsTemp = StoreEE.iAvgTimeToEmpty / 60;
+                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, "Minutes to fully discharge from full"); 
+                        StoreEE.iAvgTimeToEmpty = minsTemp * 60;
+                    }
+                    break;
+
+                default:
+                    serialPtr->print("ERROR: Bad Time command: ");
+                    serialPtr->println(userIn);
+                    break;
+                }
+            }
+            break;
+
+        case 'C':   // Board Calibration
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                case 'L': 
+                    {
+                        uint16_t valVin100s = StoreEE.calibPointLow.voltage;
+                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of low voltage"   ))
+                        {
+                            StoreEE.calibPointLow.voltage = valVin100s;
+                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_Mid(PIN_BAT_VOLTAGE);
+                        }
+                    }
+                    break;
+                case 'H':
+                    {
+                        uint16_t valVin100s = StoreEE.calibPointHigh.voltage;
+                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of higher voltage"))
+                        {
+                            StoreEE.calibPointHigh.voltage = valVin100s;
+                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_Mid(PIN_BAT_VOLTAGE);
+                        }
+                    }
+                    break;
+
+
+                default:
+                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->println(userIn);
+                    break;
+                }
+            }
+            break;
+
+        
+        case 'H':
+        case '?':
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                case 'E':
+                    {
+                    }
+                    break;
+
+                case 'Q':
+                    break;
+
+                default:
+                    printHelp(serialPtr, handleUsbOnlyOptions);
+                }
+            }
+            break;
+
+        case 'S':
+            {
+                EEPROM.put(0, StoreEE);     // Write to EEPROM at users command
+                serialPtr->println(F("\nSaved new value(s) to EEPROM.\n"));
+            }
+            break;
+
+        case 'Z':
+            {
+                FactoryDefault();       // Reset color and air pump settings
+                serialPtr->println(F("\nRestored Factory Defaults...\r\n Must do 'S' to save to EEPROM (non-volatile memory)."));
+                enableDebugPrints(StoreEE.debugFlags);  // Update the debug printing
+            }
+            break;
+
+
+        //case '#':
+        //    {
+        //        watchDogReset();
+        //    }
+        //    break;
+
+        case '~':
+            //dumpEEProm(serialPtr);
+            dumpEEProm();
+            break;
+
+        case 'D':
+            {
+                MH.updateFromUserInput(userIn, indexUserIn, inByte, 0xFF, StoreEE.debugFlags, "Debug Flags (1:Main)", true);
+                enableDebugPrints(StoreEE.debugFlags);  // Update the debug printing
+            }
+            break;  // Expects Hex string
+
+        // Clear EEPROM to FFs (uncomment to use)
+        //case '`':
+        //    clearEEPromToFFs();
+        //    serialPtr->println(F("Set all of EEPROM to FF"));
+        //    break;
+
+
+        case 'N':
+            {
+                switch ((char)toupper(userIn[1]))
+                {
+                default:
+                    serialPtr->println(F("Bad command. Should be NL or NH"));
+                    break;
+                }
+            }
+            break;  //
+
+
+        default:
+            serialPtr->print(F("\nUnknown command ["));
+            serialPtr->print(userIn);
+            serialPtr->println("].");
+            serialPtr->println("H for Help\n");
+            indexUserIn = 0;
+            userIn[0] = 0;
+            break;
+        }
+        indexUserIn = 0;
+    } // end if ((inByte == ASCII_CR) || (inByte == ASCII_LF))
+
+}
+
+
+
+// Used menu characters:
+//            ABCDEFGHIJKLMNOPQRSTUVWXYZ
+// #&()+--/?@^ABCDEFGHIJKLMN PQRSTUVWXYZ~  ('!' reserved for BLE commands (color/Up/DwnArrow), P for Password)
+//
+    void showPersistentSettings(Stream * serialPtr, bool handleUsbOnlyOptions)
+    {
+        serialPtr->println();
+        serialPtr->println(F(PROG_NAME_VERSION));
+        serialPtr->println("\nCompiled at: " __DATE__ ", " __TIME__);
+        serialPtr->println();
+
+        serialPtr->println(F("Present Settings:"));
+        serialPtr->print(F("ENn    - ENable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabled );
+        serialPtr->print(F("         (0=No PC reporting/shutdown. 1=Enabled")); serialPtr->println( );
+        serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.batFullVoltage );
+        serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.batEmptyVoltage);
+        serialPtr->print(F("TCnnnn - Average Time to fully Charge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToFull/60  );
+        serialPtr->print(F("TDnnnn - Ave. Time for full Discharge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToEmpty/60 );
+        serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100)   : ")); serialPtr->print(StoreEE.calibPointLow.voltage); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("         (Low V A2D value: "));                       serialPtr->print(StoreEE.calibPointLow.a2dValue); serialPtr->println(F(")"));
+        serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100)  : ")); serialPtr->print(StoreEE.calibPointHigh.voltage); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("         (High V A2D value: "));                      serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
+        serialPtr->println(F(" To calibrate voltage sensing for this board:"));
+        serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
+        serialPtr->println(F("  Short the together. Enter the command CL0 (Zero, not Oh)."));
+        serialPtr->println(F("  Hook the leads back up to the battery. Measure the voltage"));
+        serialPtr->println(F("  with a good digital volt meter. Enter the command CHvvvv."));
+        serialPtr->println(F("  where vvvv is the measured voltage in hundreths of a volt."));
+        serialPtr->println(F("  (If you measured 12.45 volts, enter CH1245)"));
+        serialPtr->println(F("  Voltages will always be entered in hundredths. "));
+        serialPtr->println(F("  (V*100)"));
+
+        serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
+        serialPtr->print(F("Battery Voltage*100: ")); serialPtr->println(batVoltage);
+
+
+        serialPtr->println(F("   1:dbg "));
+
+    }
+
+void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
+{
+    serialPtr->println(F("\n----Menu----"));
+    showPersistentSettings(serialPtr, handleUsbOnlyOptions);
+    serialPtr->println(F(""));
+}
+
+void FactoryDefault(void)
+{
+    StoreEE.debugFlags        =  0;  // No debug prints by default
+    StoreEE.eeValid_1         = EEPROM_VALID_PAT1;      // Set sig in case user stores config to EEPROM.
+
+    StoreEE.eeValid_2         = EEPROM_VALID_PAT2;
+    StoreEE.eeVersion         = EEPROM_END_VER_SIG;
+
+
+    // Physical parameters
+    StoreEE.iAvgTimeToFull   = 120*60;
+    StoreEE.iAvgTimeToEmpty  = 120*60;
+    StoreEE.iRemainTimeLimit =  10*60;
+    StoreEE.batFullVoltage   = 1380;   // Voltage in hundredths, Bat Full
+    StoreEE.batEmptyVoltage  = 1150;   // Voltage in hundredths, Bat Empty
+
+    StoreEE.calibPointLow.voltage   = 0;
+    StoreEE.calibPointLow.a2dValue  = 0;
+    StoreEE.calibPointHigh.voltage  = 1400;
+    StoreEE.calibPointHigh.a2dValue = 100;  // This will definetely need to be calibrated!
+
+    // Parameters for ACPI compliancy
+    StoreEE.iWarnCapacityLimit = 10; // warning at 10%
+    StoreEE.iRemnCapacityLimit = 5; // low at 5%
+    StoreEE.msgPcEnabled = false;
+
+    Serial.println(F("Restored factory defaults."));
+}
+
+
+void enableDebugPrints(uint8_t debugPrBits)
+{
+    doDebugPrints      = bitRead(debugPrBits, DBG_PRINT_MAIN     ) ? true : false;   // 0    // 0x01 Turn off debug printing for this file
+}
+
