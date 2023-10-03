@@ -9,8 +9,6 @@ HandyHelpers MH; // My Handy Helper
 
 int iIntTimer = 0;
 
-#define PIN_BAT_VOLTAGE A5
-
 
 /*
  For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
@@ -82,6 +80,11 @@ int iRes = 0;
 
 #define PROG_NAME_VERSION "Smart UPS Emulator v0.1"
 
+// I/O Pin Usage
+#define PIN_LED_STATUS          13
+#define PIN_BATTERY_VOLTAGE     A5
+#define PIN_INPUT_PWR_FAIL       4  // Short to ground to indicate loss of AC power / running on battery
+
 struct CalibPoint
 {
     uint16_t a2dValue;
@@ -145,10 +148,28 @@ void showPersistentSettings(Stream *serialPtr = &Serial, bool handleUsbOnlyOptio
 void enableDebugPrints(uint8_t debugPrBits);
 #define DBG_PRINT_MAIN      0    // 0x01
 
+enum Status_HID_Comm
+{
+    stat_Disabled,
+    stat_Good,
+    stat_Error
+};
+Status_HID_Comm status_HID = stat_Disabled;
+
+#define BLINKON_DIS    500  // Blink patterns for the status LED
+#define BLINKOFF_DIS   500
+#define BLINKON_GOOD   900
+#define BLINKOFF_GOOD  100
+#define BLINKON_ERROR  100
+#define BLINKOFF_ERROR 900
+
 Stream *serPtr = &Serial;
 int batVoltage = 1300;
 
- void setup(void)
+Timer_ms statusLedTimerOn;
+Timer_ms statusLedTimerOff;
+
+void setup(void)
 {
 
     Serial.begin(57600);
@@ -185,10 +206,14 @@ int batVoltage = 1300;
     // Used for debugging purposes.
     PowerDevice.setOutput(Serial);
 
-    pinMode(4, INPUT_PULLUP); // ground this pin to simulate power failure.
+    pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
+    pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
+    digitalWrite(PIN_LED_STATUS, HIGH); // Flash with different patterns to show HID comm status
+
     //pinMode(6, INPUT_PULLUP); // ground this pin to send only the shutdown command without changing bat charge // Sid added for temperary test
-    pinMode(5, OUTPUT);  // output flushing 1 sec indicating that the arduino cycle is running.
-    pinMode(10, OUTPUT); // output is on once commuication is lost with the host, otherwise off.
+    //pinMode(5, OUTPUT);  // output flushing 1 sec indicating that the arduino cycle is running.
+    //pinMode(10, OUTPUT); // output is on once commuication is lost with the host, otherwise off.
+
 
     // Set the first stuff set up to be looking good, so we don't cause a PC shutdown before we get things config'd and working.
     bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
@@ -227,7 +252,6 @@ int batVoltage = 1300;
     if (true)
     {
         bool bCharging = true;
-        bool bACPresent = bCharging;    // TODO - replace with sensor
         bool bDischarging = !bCharging; // TODO - replace with sensor
 
         // Send initial report with everything looking good, update in main loop
@@ -237,6 +261,7 @@ int batVoltage = 1300;
         Serial.println("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
     }
 
+    statusLedTimerOn.Start(10);
 }
 
 
@@ -252,11 +277,11 @@ void loop(void)
     if (timeToUpdate.StartIfStopped(1000))
     {
         //*********** Measurements Unit ****************************
-        bool bCharging = digitalRead(4);
+        bool bCharging = digitalRead(PIN_INPUT_PWR_FAIL);
         //bool bForceShutdown = digitalRead(6) ? false : true;  // Sid added for temperary test
         bool bACPresent = bCharging;    // TODO - replace with sensor
         bool bDischarging = !bCharging; // TODO - replace with sensor
-        int iA7 = analogRead(PIN_BAT_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
+        int iA7 = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
 
         //if (true)
         //{
@@ -360,19 +385,30 @@ void loop(void)
                     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
                 //}
 
-                if (iRes < 0)
-                {
-                    digitalWrite(10, HIGH);
-                }
-                else digitalWrite(10, LOW);
+                // DOYET: attache LED to pint 10
+                //if (iRes < 0)
+                //{
+                //    digitalWrite(10, HIGH);
+                //}
+                //else digitalWrite(10, LOW);
 
                 iIntTimer = 0;
                 iPreviousStatus = iPresentStatus;
                 iPrevRemaining = iRemaining;
                 iPrevRunTimeToEmpty = iRunTimeToEmpty;
                 //bForceShutdownPrior = bForceShutdown;
+
+                if (iRes>=0)
+                    status_HID = stat_Good;
+                else
+                    status_HID = stat_Error;
+
             }
         }//end if (StoreEE.msgPcEnabled)
+        else
+        {
+            status_HID = stat_Disabled;
+        }
 
         if (StoreEE.msgPcEnabled)
         {
@@ -388,8 +424,26 @@ void loop(void)
         }
         Serial.print("BatV*100: ");
         Serial.println(batVoltage);
-    }
+    }//end if (timeToUpdate.StartIfStopped(1000))
 
+    uint16_t DurOn;
+    uint16_t DurOff;
+    switch (status_HID)
+    {
+    case stat_Disabled: DurOn = 500; DurOff = 500; break;
+    case stat_Good:     DurOn = 900; DurOff = 100; break;
+    case stat_Error:    DurOn = 100; DurOff = 900; break;
+    }
+    if (statusLedTimerOn.isComplete())
+    {
+        statusLedTimerOff.Start(DurOff);
+        digitalWrite(PIN_LED_STATUS, LOW);
+    }
+    if (statusLedTimerOff.isComplete())
+    {
+        statusLedTimerOn.Start(DurOn);
+        digitalWrite(PIN_LED_STATUS, HIGH);
+    }
 }
 
 void handleLaptopInput(void)
@@ -525,7 +579,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of low voltage"   ))
                         {
                             StoreEE.calibPointLow.voltage = valVin100s;
-                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_Mid(PIN_BAT_VOLTAGE);
+                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
                         }
                     }
                     break;
@@ -535,7 +589,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of higher voltage"))
                         {
                             StoreEE.calibPointHigh.voltage = valVin100s;
-                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_Mid(PIN_BAT_VOLTAGE);
+                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
                         }
                     }
                     break;
