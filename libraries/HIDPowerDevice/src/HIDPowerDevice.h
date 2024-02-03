@@ -104,7 +104,9 @@ public:
   HIDPowerDevice_(void);
   void begin(void);
   
+#ifdef CDC_ENABLED
   void setOutput(Serial_&);
+#endif
   
   void setSerial(const char*);
   

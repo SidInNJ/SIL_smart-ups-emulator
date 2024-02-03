@@ -239,9 +239,11 @@ void HIDPowerDevice_::begin(void) {
     
 }
 
+#ifdef CDC_ENABLED
 void HIDPowerDevice_::setOutput(Serial_& out) {
     HID().setOutput(out);
 }
+#endif
 
 void HIDPowerDevice_::setSerial(const char* s) {
     HID().setSerial(s);

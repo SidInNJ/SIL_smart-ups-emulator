@@ -33,10 +33,17 @@ Todo:
     Open "Critical battery action", "On battery:" use pulldown to select desired action.
 */
 
+#ifdef CDC_ENABLED
 bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { Serial.println(args);}
-#define DBPRINT(args...)   if(doDebugPrints) { Serial.print(args);}
+#define DBPRINTLN(args...) if(doDebugPrints) { DBPRINTln(args);}
+#define DBPRINT(args...)   if(doDebugPrints) { DBPRINT(args);}
 #define DBWRITE(args...)   if(doDebugPrints) { Serial.write(args);}
+#else
+bool doDebugPrints = false;  // Enable printing by default
+#define DBPRINTLN(args...) 
+#define DBPRINT(args...)   
+#define DBWRITE(args...)   
+#endif
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -172,14 +179,15 @@ Timer_ms statusLedTimerOff;
 void setup(void)
 {
 
+#ifdef CDC_ENABLED
     Serial.begin(57600);
-
     delay(500);
+#endif
 
-    Serial.println();
-    Serial.println(F(PROG_NAME_VERSION));
-    Serial.println("\nCompiled at: " __DATE__ ", " __TIME__);
-    Serial.println("Starting...\n\r");
+    DBPRINTLN();
+    DBPRINTLN(F(PROG_NAME_VERSION));
+    DBPRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
+    DBPRINTLN("Starting...\n\r");
 
     // New for GTIS
     EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
@@ -187,11 +195,11 @@ void setup(void)
     if ((StoreEE.eeValid_1 == EEPROM_VALID_PAT1) && (StoreEE.eeValid_2 == EEPROM_VALID_PAT2) && (StoreEE.eeVersion == EEPROM_END_VER_SIG)) // Signature Valid?
     {
         enableDebugPrints(StoreEE.debugFlags);
-        Serial.println(F("Good: EEPROM is initialized."));
+        DBPRINTLN(F("Good: EEPROM is initialized."));
     }
     else
     {
-        Serial.println(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
+        DBPRINTLN(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
         FactoryDefault();
     }
 
@@ -204,7 +212,9 @@ void setup(void)
     PowerDevice.setSerial(STRING_SERIAL);
 
     // Used for debugging purposes.
+#ifdef CDC_ENABLED
     PowerDevice.setOutput(Serial);
+#endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
     pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
@@ -258,7 +268,7 @@ void setup(void)
         PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
         if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
         iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-        Serial.println("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
+        DBPRINTLN("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
     }
 
     statusLedTimerOn.Start(10);
@@ -271,8 +281,9 @@ void loop(void)
 {
     WATCHDOG_RESET; // Reset watchdog frequently
 
+#ifdef CDC_ENABLED
     handleLaptopInput();
-
+#endif
 
     if (timeToUpdate.StartIfStopped(1000))
     {
@@ -333,7 +344,7 @@ void loop(void)
             if (iDelayBe4ShutDown > 0)
             {
                 bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-                Serial.println("shutdown requested");
+                DBPRINTLN("shutdown requested");
             }
             else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
 
@@ -347,7 +358,7 @@ void loop(void)
                 (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
             {
                 bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-                Serial.println("shutdown imminent");
+                DBPRINTLN("shutdown imminent");
             }
             else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
 
@@ -412,18 +423,18 @@ void loop(void)
 
         if (StoreEE.msgPcEnabled)
         {
-            Serial.print("Remaining: ");
-            Serial.print(iRemaining);
-            Serial.print(", To Empty mm:ss ");
-            Serial.print(iRunTimeToEmpty / 60);
-            Serial.print(":");
-            Serial.print(iRunTimeToEmpty % 60);
-            Serial.print(", Comm with PC (negative=bad): ");
-            Serial.print(iRes);
-            Serial.print(", ");
+            DBPRINT("Remaining: ");
+            DBPRINT(iRemaining);
+            DBPRINT(", To Empty mm:ss ");
+            DBPRINT(iRunTimeToEmpty / 60);
+            DBPRINT(":");
+            DBPRINT(iRunTimeToEmpty % 60);
+            DBPRINT(", Comm with PC (negative=bad): ");
+            DBPRINT(iRes);
+            DBPRINT(", ");
         }
-        Serial.print("BatV*100: ");
-        Serial.println(batVoltage);
+        DBPRINT("BatV*100: ");
+        DBPRINTLN(batVoltage);
     }//end if (timeToUpdate.StartIfStopped(1000))
 
     uint16_t DurOn;
@@ -446,6 +457,7 @@ void loop(void)
     }
 }
 
+#ifdef CDC_ENABLED
 void handleLaptopInput(void)
 {
 #define ASCII_CR            0x0D
@@ -465,7 +477,7 @@ void handleLaptopInput(void)
         }
         //if (inByte == ASCII_CR)
         //{
-        //    Serial.println(F("<CR>"));
+        //    DBPRINTLN(F("<CR>"));
         //}
 
         if (indexUserIn < MAX_MENU_CHARS)
@@ -738,6 +750,8 @@ void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
     showPersistentSettings(serialPtr, handleUsbOnlyOptions);
     serialPtr->println(F(""));
 }
+#endif
+
 
 void FactoryDefault(void)
 {
@@ -765,7 +779,7 @@ void FactoryDefault(void)
     StoreEE.iRemnCapacityLimit = 5; // low at 5%
     StoreEE.msgPcEnabled = false;
 
-    Serial.println(F("Restored factory defaults."));
+    DBPRINTLN(F("Restored factory defaults."));
 }
 
 

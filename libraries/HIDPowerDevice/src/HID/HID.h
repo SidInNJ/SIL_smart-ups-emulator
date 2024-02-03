@@ -22,7 +22,10 @@
 
 #include <stdint.h>
 #include <Arduino.h>
-#include <HardwareSerial.h>
+
+#ifdef CDC_ENABLED
+    #include <HardwareSerial.h>
+#endif
 #include <PluggableUSB.h>
 
 #if defined(USBCON)
