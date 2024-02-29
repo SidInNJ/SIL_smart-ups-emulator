@@ -14,6 +14,12 @@
 #include <IPAddress.h>
 #include <EEPROM.h>     // for dumpEEProm()
 
+#ifdef CDC_ENABLED
+    #define SERIALPORT Serial   // Using USB Serial
+#else
+    #define SERIALPORT Serial1  // Using pins 0/1 for Serial1 Rx/Tx
+#endif
+
 // Common ASCII Chars
 #define ASCII_STX           0x02
 #define ASCII_CR            0x0D
@@ -155,7 +161,7 @@ uint32_t disolveDot(uint32_t colorOld, uint32_t colorNew, uint16_t ratioNew256);
 uint32_t disolveColor(uint32_t colorOld, uint32_t colorNew, unsigned long startTime, unsigned long dissolveDuration = DUR_DONE_DEFAULT);
 uint16_t disolve16BitNum(uint32_t numOld, uint32_t numTarget, unsigned long startTime, unsigned long dissolveDuration); // Disolve (change the value) a 16 bit number over time (convert to 32bit on the way in)
 int check_mem(bool doPrint = true) ;     // Display how much memory is available (call after dynamically allocating memory)
-void dumpEEProm(Stream *serialPtr=&Serial);      // Show EEPROM contents. If captured to a file, the file may be written to the EEPROM of a new Arduino using EEPromRestore.ino and RealTerm https://realterm.sourceforge.io/
+void dumpEEProm(Stream *serialPtr=&SERIALPORT);      // Show EEPROM contents. If captured to a file, the file may be written to the EEPROM of a new Arduino using EEPromRestore.ino and RealTerm https://realterm.sourceforge.io/
 int uint16Compare(const void *arg1, const void *arg2); // Use for qsort() comparisons of uint16_t's. ie. qsort(arOfEdges, numZones, sizeof(arOfEdges[0]), uint16Compare);
 bool isConfigEEPromMismatch(uint16_t addr, uint8_t *configPtr, uint16_t len);
 // Convert a linear lighting "curve" to a squared lighting curve
@@ -176,7 +182,7 @@ uint32_t Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t white = 0);
 
 class HandyHelpers {
 public: 
-    HandyHelpers(void) { m_serialPtr = &Serial; }
+    HandyHelpers(void) { m_serialPtr = &SERIALPORT; }
 
     uint16_t anaFilter_Mid(uint8_t AnaInChan, uint8_t numSamples = 29); // 29 is good value for numSamples as it takes the time of a full-wave of AC power.
 
@@ -225,8 +231,8 @@ public:
     void printNumPadBlanks(uint16_t num, uint8_t numDigits);
     void printParsedBytes(uint8_t *byteArray, uint8_t numFields, char delim=',', uint8_t base=HEX);
     uint32_t reduceToMaxIntensity(uint32_t newColor, uint16_t maxIntensity);    // Reduce color values so sum does not exceed maxIntensity
-    void setSerialOutputStream(Stream *serialPtr = &Serial) {m_serialPtr = serialPtr;}
-    void resetSerialOutputStream(void) { m_serialPtr = &Serial; }
+    void setSerialOutputStream(Stream *serialPtr = &SERIALPORT) {m_serialPtr = serialPtr;}
+    void resetSerialOutputStream(void) { m_serialPtr = &SERIALPORT; }
     Stream* serPtr(void) { return m_serialPtr; }    // use as: MH.serPtr()->print(F("Hi"));
 
 private:

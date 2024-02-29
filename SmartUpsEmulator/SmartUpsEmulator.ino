@@ -1,8 +1,11 @@
+/*
+ * Filename:  SmartUpsEmulator.007
+ * Date:      6 Feb 2024
+*/
+
 //#include <HIDPowerDevice.h>
 #include "HIDPowerDevice.h"
 #include "TimerHelpers.h"
-
-//#include "USBDesc.h"
 
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
@@ -39,17 +42,11 @@ Todo:
     Open "Critical battery action", "On battery:" use pulldown to select desired action.
 */
 
-#ifdef CDC_ENABLED
+// Note: if CDC_ENABLED is defined, SERIALPORT is defined as Serial, otherwise as Serial1 (Pins 0/1)
 bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { Serial.println(args);}
-#define DBPRINT(args...)   if(doDebugPrints) { Serial.print(args);}
-#define DBWRITE(args...)   if(doDebugPrints) { Serial.write(args);}
-#else
-bool doDebugPrints = false;  // Enable printing by default
-#define DBPRINTLN(args...) 
-#define DBPRINT(args...)   
-#define DBWRITE(args...)   
-#endif
+#define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT.println(args);}
+#define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT.print(args);}
+#define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT.write(args);}
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -155,9 +152,12 @@ EEPROM_Struct StoreEE;
 void handleLaptopInput(void);
 void printHelp(void);
 void watchDogReset(void);
-void printHelp(Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
-void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
-void showPersistentSettings(Stream *serialPtr = &Serial, bool handleUsbOnlyOptions = true);
+//void printHelp(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);   // DBC.007
+//void printHelp(Stream *serialPtr = &Serial1, bool handleUsbOnlyOptions = true);  // DBC.007
+//void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);  // DBC.007
+void printHelp(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
+void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
+void showPersistentSettings(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
 void enableDebugPrints(uint8_t debugPrBits);
 #define DBG_PRINT_MAIN      0    // 0x01
 
@@ -176,7 +176,8 @@ Status_HID_Comm status_HID = stat_Disabled;
 #define BLINKON_ERROR  100
 #define BLINKOFF_ERROR 900
 
-Stream *serPtr = &Serial;
+//Stream *serPtr = &SERIALPORT;  // DBC.007
+Stream *serPtr = &SERIALPORT;
 int batVoltage = 1300;
 
 Timer_ms statusLedTimerOn;
@@ -186,14 +187,22 @@ void setup(void)
 {
 
 #ifdef CDC_ENABLED
-    Serial.begin(57600);
+    SERIALPORT.begin(57600);
     delay(500);
+#endif
+
+#ifdef CDC_DISABLED
+    SERIALPORT.begin(115200);
+    while (!SERIALPORT);
+    delay(1000);
 #endif
 
     DBPRINTLN();
     DBPRINTLN(F(PROG_NAME_VERSION));
+    DBPRINTLN(F(__FILE__));               // Print name of the source file
     DBPRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
     DBPRINTLN("Starting...\n\r");
+
 
     // New for GTIS
     EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
@@ -219,7 +228,7 @@ void setup(void)
 
     // Used for debugging purposes.
 #ifdef CDC_ENABLED
-    PowerDevice.setOutput(Serial);
+    PowerDevice.setOutput(SERIALPORT);
 #endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
@@ -287,9 +296,7 @@ void loop(void)
 {
     WATCHDOG_RESET; // Reset watchdog frequently
 
-#ifdef CDC_ENABLED
     handleLaptopInput();
-#endif
 
     if (timeToUpdate.StartIfStopped(1000))
     {
@@ -439,6 +446,7 @@ void loop(void)
             DBPRINT(iRes);
             DBPRINT(", ");
         }
+        doDebugPrints = true;
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
     }//end if (timeToUpdate.StartIfStopped(1000))
@@ -463,7 +471,7 @@ void loop(void)
     }
 }
 
-#ifdef CDC_ENABLED
+//#ifdef CDC_ENABLED  // DBC.007
 void handleLaptopInput(void)
 {
 #define ASCII_CR            0x0D
@@ -474,12 +482,12 @@ void handleLaptopInput(void)
     static uint8_t indexUserIn = 0;
     int inByte;
 
-    while (Serial.available())
+    while (SERIALPORT.available())     // DBC.007
     {
-        inByte = Serial.read();
+        inByte = SERIALPORT.read();    // DBC.007
         if (doDebugPrints)
         {
-            Serial.write(inByte);
+            SERIALPORT.write(inByte);  // DBC.007
         }
         //if (inByte == ASCII_CR)
         //{
@@ -494,13 +502,14 @@ void handleLaptopInput(void)
             }
 
             userIn[indexUserIn] = 0;
-            //DBPRINT(F("["));
-            //DBPRINT(userIn);
-            //DBPRINTLN(F("]"));
+            DBPRINT(F("["));    // DBC.007
+            DBPRINT(userIn);    // DBC.007
+            DBPRINTLN(F("]"));  // DBC.007
 
             if (indexUserIn)    // Skip only CR or LF without a real string
             {
-                processUserInput(userIn, indexUserIn, inByte);
+                //processUserInput(userIn, indexUserIn, inByte);                // DBC.007
+                processUserInput(userIn, indexUserIn, inByte, &SERIALPORT, true);  // DBC.007
             }
         } //end if (indexUserIn<MAX_MENU_CHARS)
         else
@@ -514,10 +523,9 @@ void handleLaptopInput(void)
         {
             DBPRINT("\nCmd: ");
         }
-    } // end if (Serial.available())
+    } // end if (SERIALPORT.available())
 
 }
-
 
 
 void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr, bool handleUsbOnlyOptions)
@@ -531,7 +539,6 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         char cmdChar = (char)toupper(userIn[0]);
         switch (cmdChar)
         {
-
         case 'E':   // Battery Config
             {
                 switch ((char)toupper(userIn[1]))
@@ -628,15 +635,14 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 switch ((char)toupper(userIn[1]))
                 {
                 case 'E':
-                    {
-                    }
                     break;
 
                 case 'Q':
                     break;
 
                 default:
-                    printHelp(serialPtr, handleUsbOnlyOptions);
+                      printHelp(serialPtr, handleUsbOnlyOptions);  // DBC.007
+                    break;                                         // DBC.007
                 }
             }
             break;
@@ -664,8 +670,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //    break;
 
         case '~':
-            //dumpEEProm(serialPtr);
-            dumpEEProm();
+            dumpEEProm(serialPtr);
             break;
 
         case 'D':
@@ -681,7 +686,6 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //    serialPtr->println(F("Set all of EEPROM to FF"));
         //    break;
 
-
         case 'N':
             {
                 switch ((char)toupper(userIn[1]))
@@ -691,8 +695,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     break;
                 }
             }
-            break;  //
-
+            break;
 
         default:
             serialPtr->print(F("\nUnknown command ["));
@@ -703,11 +706,11 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             userIn[0] = 0;
             break;
         }
+        
         indexUserIn = 0;
     } // end if ((inByte == ASCII_CR) || (inByte == ASCII_LF))
 
 }
-
 
 
 // Used menu characters:
@@ -750,18 +753,19 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
     }
 
+
 void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
 {
     serialPtr->println(F("\n----Menu----"));
-    showPersistentSettings(serialPtr, handleUsbOnlyOptions);
+    showPersistentSettings(serialPtr, handleUsbOnlyOptions); // DBC.007
     serialPtr->println(F(""));
 }
-#endif
 
 
 void FactoryDefault(void)
 {
-    StoreEE.debugFlags        =  0;  // No debug prints by default
+    //StoreEE.debugFlags        =  0;  // No debug prints by default  // DBC.007
+    StoreEE.debugFlags        =  1;  // Debug prints by default       // DBC.007
     StoreEE.eeValid_1         = EEPROM_VALID_PAT1;      // Set sig in case user stores config to EEPROM.
 
     StoreEE.eeValid_2         = EEPROM_VALID_PAT2;
@@ -793,4 +797,3 @@ void enableDebugPrints(uint8_t debugPrBits)
 {
     doDebugPrints      = bitRead(debugPrBits, DBG_PRINT_MAIN     ) ? true : false;   // 0    // 0x01 Turn off debug printing for this file
 }
-

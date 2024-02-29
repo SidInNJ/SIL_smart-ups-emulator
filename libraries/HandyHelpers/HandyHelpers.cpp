@@ -377,11 +377,11 @@ void HandyHelpers::UserIPAddressEntry(char userIn[MAX_MENU_CHARS], uint8_t &inde
         {
             m_serialPtr->print(F("Previous IP Address: "));
             printParsedNumberEndian(destIpAddr, 4, '.');
-            //destIpAddr.printTo(Serial);
+            //destIpAddr.printTo(SERIALPORT);
             destIpAddr.fromString(&userIn[valStrOffset]);     // Convert from string to IP address
             m_serialPtr->print(F("\nNew IP Address     : "));
             printParsedNumberEndian(destIpAddr, 4, '.');
-            //destIpAddr.printTo(Serial);
+            //destIpAddr.printTo(SERIALPORT);
             m_serialPtr->println(F("\nMust Save and power-cycle/reset (#) to take effect."));
             eeAddressStorage = destIpAddr;    // Get 32 bit IP address
         }
@@ -674,14 +674,14 @@ uint32_t HandyHelpers::reduceToMaxIntensity(uint32_t proposedColor, uint16_t max
     }
     else
     {
-        //Serial.print(F("Color not too bright. Sum: "));
-        //Serial.print(colorSum);
-        //Serial.print(F(", New Color:  "));
+        //SERIALPORT.print(F("Color not too bright. Sum: "));
+        //SERIALPORT.print(colorSum);
+        //SERIALPORT.print(F(", New Color:  "));
         //MH.printParsedNumber(newColor);
-        //Serial.print(F(", R: ")); Serial.print(r);
-        //Serial.print(F(", G: ")); Serial.print(g);
-        //Serial.print(F(", B: ")); Serial.print(b);
-        //Serial.println();
+        //SERIALPORT.print(F(", R: ")); SERIALPORT.print(r);
+        //SERIALPORT.print(F(", G: ")); SERIALPORT.print(g);
+        //SERIALPORT.print(F(", B: ")); SERIALPORT.print(b);
+        //SERIALPORT.println();
     }
     return newColor;
 }
@@ -712,7 +712,7 @@ uint32_t disolveDot(uint32_t colorOld, uint32_t colorNew, uint16_t ratioNew256)
     if (ratioNew256 > RESOLUTION_MULTI)
     {
         ratioNew256 = RESOLUTION_MULTI;
-        Serial.println(F("Programming Warning: ratioNew256 > 256."));
+        SERIALPORT.println(F("Programming Warning: ratioNew256 > 256."));
     }
     unsigned long multOld = RESOLUTION_MULTI - ratioNew256;
     unsigned long multNew = ratioNew256;
@@ -828,12 +828,12 @@ int check_mem(bool doPrint)
     
         if (doPrint)
         {
-            Serial.print(F("\n Avail RAM: "));
-            Serial.print((long)(stackptr-heapptr));
-            Serial.print(F(", Stack="));
-            Serial.print((long)stackptr);
-            Serial.print(F(", Heap="));
-            Serial.println((long)heapptr);
+            SERIALPORT.print(F("\n Avail RAM: "));
+            SERIALPORT.print((long)(stackptr-heapptr));
+            SERIALPORT.print(F(", Stack="));
+            SERIALPORT.print((long)stackptr);
+            SERIALPORT.print(F(", Heap="));
+            SERIALPORT.println((long)heapptr);
         }
     
         return(int) ((long)(stackptr-heapptr));
@@ -955,17 +955,17 @@ void clearEEPromToFFs(void)
         delay(100);
     }
 
-    Serial.print(F("fillArraySize: "));
-    Serial.print(fillArraySize);
-    Serial.print(F(", EESize: "));
-    Serial.print(EEPROM_END_ADDR);
-    Serial.print(F(", fillArray[0]: "));
-    Serial.print(fillArray[0]);
-    Serial.print(F(", fillArray[1]: "));
-    Serial.print(fillArray[1]);
-    Serial.print(F(", EESize/fillArraySize: "));
-    Serial.print(EEPROM_END_ADDR/fillArraySize);
-    Serial.println();
+    SERIALPORT.print(F("fillArraySize: "));
+    SERIALPORT.print(fillArraySize);
+    SERIALPORT.print(F(", EESize: "));
+    SERIALPORT.print(EEPROM_END_ADDR);
+    SERIALPORT.print(F(", fillArray[0]: "));
+    SERIALPORT.print(fillArray[0]);
+    SERIALPORT.print(F(", fillArray[1]: "));
+    SERIALPORT.print(fillArray[1]);
+    SERIALPORT.print(F(", EESize/fillArraySize: "));
+    SERIALPORT.print(EEPROM_END_ADDR/fillArraySize);
+    SERIALPORT.println();
 }
 
 
@@ -982,7 +982,7 @@ AverageRecent::AverageRecent(uint8_t listLen)         // Pass # of readings to a
     m_list = (uint16_t*) malloc((m_listLen+1) * sizeof(uint16_t));        
     if (m_list == NULL)
     {
-        Serial.println("PROGRAMMING ERROR: malloc() failed in AverageRecent(). Halting...");
+        SERIALPORT.println("PROGRAMMING ERROR: malloc() failed in AverageRecent(). Halting...");
         while (true)
             ;
     }
@@ -1000,10 +1000,10 @@ AverageRecent::AverageRecent(uint8_t listLen)         // Pass # of readings to a
             readSum += range;
             readSum /= MAXREADS;
 
-            //Serial.print("Range: ");
-            //Serial.print(range);
-            //Serial.print(", Ave: ");
-            //Serial.println(readSum);
+            //SERIALPORT.print("Range: ");
+            //SERIALPORT.print(range);
+            //SERIALPORT.print(", Ave: ");
+            //SERIALPORT.println(readSum);
 */
 
 uint16_t AverageRecent::aveRecent(uint16_t lastRead)  // Pass most recent reading, returns ave of last few readings
@@ -1024,10 +1024,10 @@ uint16_t AverageRecent::aveRecent(uint16_t lastRead)  // Pass most recent readin
     readSum += lastRead;
     readSum /= m_listLenSoFar;
 
-    //Serial.print("Range: ");
-    //Serial.print(range);
-    //Serial.print(", Ave: ");
-    //Serial.println(readSum);
+    //SERIALPORT.print("Range: ");
+    //SERIALPORT.print(range);
+    //SERIALPORT.print(", Ave: ");
+    //SERIALPORT.println(readSum);
 
     return readSum; 
 }

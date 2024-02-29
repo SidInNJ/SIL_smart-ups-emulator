@@ -13,5 +13,5 @@ Rem
 Rem Davis: avrdude "-Cavrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM6" -b57600 -D "-Uflash:w:SmartUpsEmulator.007.ino.hex:i"
 Rem Sid:
 Rem "C:\Program Files (x86)\Arduino\hardware\tools\avr\bin\avrdude.exe" "-Cavrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM16" -b57600 -D "-Uflash:w:SmartUpsEmulator.007.ino.hex:i"
-..\..\..\bin\avrdude.exe "-C..\..\..\bin\avrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM30" -b57600 -D "-Uflash:w:SmartUpsEmulator.ino.hex:i"
+..\..\..\bin\avrdude.exe "-C..\..\..\bin\avrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM5" -b57600 -D "-Uflash:w:SmartUpsEmulator.ino.hex:i"
 pause
