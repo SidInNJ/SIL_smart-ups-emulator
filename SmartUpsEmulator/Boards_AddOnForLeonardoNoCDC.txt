@@ -1,0 +1,63 @@
+
+##############################################################
+## For building a Leonardo image without CDC (the USB serial port),
+## useful for getting smart UPS emulation on interface 0.
+## Add this to your existing "boards.txt" file and set your
+## board type to "Arduino Leonardo No CDC (No Serial 0)".
+
+leonardoNoCDC.name=Arduino Leonardo No CDC (No Serial 0)
+leonardoNoCDC.vid.0=0x2341
+leonardoNoCDC.pid.0=0x0036
+leonardoNoCDC.vid.1=0x2341
+leonardoNoCDC.pid.1=0x8036
+leonardoNoCDC.vid.2=0x2A03
+leonardoNoCDC.pid.2=0x0036
+leonardoNoCDC.vid.3=0x2A03
+leonardoNoCDC.pid.3=0x8036
+leonardoNoCDC.upload_port.0.vid=0x2341
+leonardoNoCDC.upload_port.0.pid=0x0036
+leonardoNoCDC.upload_port.1.vid=0x2341
+leonardoNoCDC.upload_port.1.pid=0x8036
+leonardoNoCDC.upload_port.2.vid=0x2A03
+leonardoNoCDC.upload_port.2.pid=0x0036
+leonardoNoCDC.upload_port.3.vid=0x2A03
+leonardoNoCDC.upload_port.3.pid=0x8036
+#leonardoNoCDC.upload_port.4.board=leonardoNoCDC
+leonardoNoCDC.upload_port.4.board=leonardo
+
+leonardoNoCDC.upload.tool=avrdude
+leonardoNoCDC.upload.tool.default=avrdude
+leonardoNoCDC.upload.tool.network=arduino_ota
+leonardoNoCDC.upload.protocol=avr109
+leonardoNoCDC.upload.maximum_size=28672
+leonardoNoCDC.upload.maximum_data_size=2560
+leonardoNoCDC.upload.speed=57600
+leonardoNoCDC.upload.disable_flushing=true
+leonardoNoCDC.upload.use_1200bps_touch=true
+leonardoNoCDC.upload.wait_for_upload_port=true
+
+leonardoNoCDC.bootloader.tool=avrdude
+leonardoNoCDC.bootloader.tool.default=avrdude
+leonardoNoCDC.bootloader.low_fuses=0xff
+leonardoNoCDC.bootloader.high_fuses=0xd8
+leonardoNoCDC.bootloader.extended_fuses=0xcb
+leonardoNoCDC.bootloader.file=caterina/Caterina-leonardoNoCDC.hex
+leonardoNoCDC.bootloader.unlock_bits=0x3F
+leonardoNoCDC.bootloader.lock_bits=0x2F
+
+leonardoNoCDC.build.mcu=atmega32u4
+leonardoNoCDC.build.f_cpu=16000000L
+leonardoNoCDC.build.vid=0x2341
+leonardoNoCDC.build.pid=0x8036
+#leonardoNoCDC.build.usb_product="Arduino leonardoNoCDC"
+leonardoNoCDC.build.usb_product="Arduino leonardo"
+#leonardoNoCDC.build.board=AVR_leonardoNoCDC
+leonardoNoCDC.build.board=AVR_leonardo
+leonardoNoCDC.build.core=arduino
+#leonardoNoCDC.build.variant=leonardoNoCDC
+leonardoNoCDC.build.variant=leonardo
+#leonardoNoCDC.build.extra_flags={build.usb_flags -DCDC_DISABLED}
+leonardoNoCDC.build.extra_flags={build.usb_flags} -DCDC_DISABLED
+
+##############################################################
+

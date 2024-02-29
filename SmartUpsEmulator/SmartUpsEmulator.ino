@@ -2,8 +2,14 @@
 #include "HIDPowerDevice.h"
 #include "TimerHelpers.h"
 
+//#include "USBDesc.h"
+
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
+
+#ifdef CDC_ENABLED
+#warning "NOTE: Serial console via USB (CDC) is still enabled!"
+#endif
 
 #define MINUPDATEINTERVAL   26
 
@@ -35,8 +41,8 @@ Todo:
 
 #ifdef CDC_ENABLED
 bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { DBPRINTln(args);}
-#define DBPRINT(args...)   if(doDebugPrints) { DBPRINT(args);}
+#define DBPRINTLN(args...) if(doDebugPrints) { Serial.println(args);}
+#define DBPRINT(args...)   if(doDebugPrints) { Serial.print(args);}
 #define DBWRITE(args...)   if(doDebugPrints) { Serial.write(args);}
 #else
 bool doDebugPrints = false;  // Enable printing by default

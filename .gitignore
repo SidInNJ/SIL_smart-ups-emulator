@@ -1,4 +1,16 @@
+# Use this to show files that aren't in git:
+# git add -n *
+
 SIL_SmartUpsEm.*
 SmartUpsEmulator/HowToUse/Pics
 .tmp.driveupload
 bin
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest-backups/VoltageDividerTest-2024-02-14_103846.zip
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest-backups/VoltageDividerTest-2024-02-14_115851.zip
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_pcb
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_prl
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_pro
+SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_sch
+SmartUpsEmulator/build/arduino.avr.leonardoNoCDC/SmartUpsEmulator.ino.eep
+SmartUpsEmulator/build/arduino.avr.leonardoNoCDC/SmartUpsEmulator.ino.elf
+
