@@ -60,6 +60,16 @@ static bool USB_SendStringDescriptor(const char* string_P, u8 string_len, uint8_
 
 int HID_::getDescriptor(USBSetup& setup)
 {
+	#ifdef SERIAL1_DEBUG                         // DBC.008f   
+	Serial1.println(F("Called HID_::getDescriptor: "));                                 // DBC.008a
+	Serial1.println(F("Setup: "));                                                      // DBC.008a
+	Serial1.print(F(" bmRequestType: ")); Serial1.println(setup.bmRequestType, BIN);    // DBC.008a
+	Serial1.print(F(" bRequest:      ")); Serial1.println(setup.bRequest);              // DBC.008a
+	Serial1.print(F(" wValueL:     0x")); Serial1.println(setup.wValueL, HEX);          // DBC.008a
+	Serial1.print(F(" wValueH:     0x")); Serial1.println(setup.wValueH, HEX);          // DBC.008a
+	Serial1.print(F(" wIndex:        ")); Serial1.println(setup.wIndex);                // DBC.008a
+	Serial1.print(F(" wLength:       ")); Serial1.println(setup.wLength);               // DBC.008a
+	#endif
     
         u8 t = setup.wValueH;
         
@@ -79,6 +89,9 @@ int HID_::getDescriptor(USBSetup& setup)
 	// Check if this is a HID Class Descriptor request
 	if (setup.bmRequestType != REQUEST_DEVICETOHOST_STANDARD_INTERFACE) { return 0; }
 	if (HID_REPORT_DESCRIPTOR_TYPE != t) { return 0; }
+	#ifdef SERIAL1_DEBUG                         // DBC.008f   
+	Serial1.println(F("HID_REPORT_DESCRIPTOR_TYPE: "));                                 // DBC.008a
+	#endif
 
 	// In a HID Class Descriptor wIndex cointains the interface number
 	if (setup.wIndex != pluggedInterface) { return 0; }
@@ -265,6 +278,11 @@ bool HID_::setup(USBSetup& setup)
 	return false;
 }
 
+//volatile extern bool USBCDCNeeded;  // DBC.008b
+extern bool USBCDCNeeded;  // DBC.008b
+volatile bool AskedForCDC;          // DBC.008b
+extern long USBSwitchTime[5];       // DBC.008c
+
 HID_::HID_(void) : PluggableUSBModule(2, 1, epType),
                    rootNode(NULL), descriptorSize(0),
                    protocol(HID_REPORT_PROTOCOL), idle(1)
@@ -272,6 +290,27 @@ HID_::HID_(void) : PluggableUSBModule(2, 1, epType),
 	epType[0] = EP_TYPE_INTERRUPT_IN;
         epType[1] = EP_TYPE_INTERRUPT_OUT;
 	PluggableUSB().plug(this);
+	/*
+  USBDevice.getCDCNeeded();
+  //if (USBCDCNeeded) {                   // DBC.008b  Davis, why is USBCDCNeeded not set?
+  //if (USBDevice.getCDCNeeded() == true) {            // DBC.008b  Davis, why is USBCDCNeeded not set?
+  if (digitalRead(2) == LOW) {           // DBC.008b Switch is pressed
+		digitalWrite(7, HIGH);               // DBC.008a Green on
+		USBSwitchTime[4] = millis();         // DBC.008c
+		//USBSwitchTime[4] = 7;         // DBC.008c
+	  PluggableUSB().plug(this, true);     // DBC.008b
+    AskedForCDC = true;                  // DBC.008b
+    USBCDCNeeded = true;                 // DBC.008b
+  }                                      // DBC.008b
+  else {                                 // DBC.008b
+		digitalWrite(6, HIGH);               // DBC.008a Blue on
+		USBSwitchTime[4] = -millis();        // DBC.008c
+		//USBSwitchTime[4] = -7;         // DBC.008c
+	  PluggableUSB().plug(this, false);    // DBC.008b
+    AskedForCDC = false;                 // DBC.008b
+    USBCDCNeeded = false;                // DBC.008b
+  }                                      	// DBC.008b
+*/
 }
 
 int HID_::begin(void)

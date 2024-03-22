@@ -1,11 +1,29 @@
 /*
- * Filename:  SmartUpsEmulator.007
- * Date:      6 Feb 2024
+ * Filename:  SmartUpsEmulator.008
+ * Date:      8 Feb 2024
+ *            This code works both when CDC_ENABLED is defined and when CDC_DISABLED is defined
+ *            When CDC_ENABLED is defined output is written to the USB serial port
+ *            When CDC_DISABLED is defined Output is written to the Serial1 (pins 0 & 1) hardware UART
+*/
+
+/*
+  In USBDesc.h
+    Change CDC_ACM_INTERFACE	0 -> CDC_ACM_INTERFACE	1  // Leave interface 0 open for HID device
+    Change CDC_DATA_INTERFACE	1 -> CDC_DATA_INTERFACE	2
+
+  In HID.h
+    Change HID_INTERFACE (CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT) -> 0
+                                  0         +         2
+  This doesn't work. The Device Monitoring Studio does not see the device.
+  The USB Device Tree Viewer lists the device with "Device has Problem Code 10 (failed start)."
+
 */
 
 //#include <HIDPowerDevice.h>
 #include "HIDPowerDevice.h"
 #include "TimerHelpers.h"
+
+//#include "HID.h"    // SLR: to define HID_INTERFACE
 
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
@@ -17,7 +35,6 @@ HandyHelpers MH; // My Handy Helper
 #define MINUPDATEINTERVAL   26
 
 int iIntTimer = 0;
-
 
 /*
  For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
@@ -183,19 +200,34 @@ int batVoltage = 1300;
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
 
+extern bool USBCDCNeeded;  // DBC.008b
+extern bool AskedForCDC;   // DBC.008b
+extern long USBSwitchTime[6];  // DBC.008c
+extern long USBSwitchCount[6];
+
 void setup(void)
 {
 
 #ifdef CDC_ENABLED
-    SERIALPORT.begin(57600);
-    delay(500);
+    Serial.begin(115200);
+    delay(5000);
+    Serial.print(F("USB Serial baud, bits, parity, stop bits: "));
+    Serial.print(Serial.baud());
+    Serial.print(F(", "));
+    Serial.print(Serial.numbits());
+    Serial.print(F(", "));
+    Serial.print(Serial.paritytype());
+    Serial.print(F(", "));
+    Serial.println(Serial.stopbits());
 #endif
 
-#ifdef CDC_DISABLED
-    SERIALPORT.begin(115200);
-    while (!SERIALPORT);
+
+// #ifdef CDC_DISABLED
+    Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
+    while (!Serial1);
     delay(1000);
-#endif
+// #endif
+
 
     DBPRINTLN();
     DBPRINTLN(F(PROG_NAME_VERSION));
@@ -203,6 +235,14 @@ void setup(void)
     DBPRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
     DBPRINTLN("Starting...\n\r");
 
+    //Serial1.begin(115200);
+    //while (!Serial1);
+    //delay(1000);
+    //Serial1.print("Starting...\n\r");
+
+    // Davis, do we want to always send this to Serial1, CDC_ENABLED or not?
+    Serial1.print("USBCDCNeeded: ");  // DBC.008b
+    Serial1.println(USBCDCNeeded);    // DBC.008b
 
     // New for GTIS
     EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
@@ -449,6 +489,26 @@ void loop(void)
         doDebugPrints = true;
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
+        SERIALPORT.print("BatV*100: ");  // DBC.008
+        SERIALPORT.println(batVoltage);  // DBC.008
+        #ifdef SERIAL1_DEBUG                         // DBC.008f   
+        Serial1.print("USBCDCNeeded: ");  // DBC.008b
+        Serial1.print(USBCDCNeeded);      // DBC.008b
+        Serial1.print("  AskedForCDC: "); // DBC.008b
+        Serial1.println(AskedForCDC);     // DBC.008b
+        for (int u=0; u<6; u++) {                    // DBC.008c
+          Serial1.print("USBSwitchTime[");           // DBC.008c
+          Serial1.print(u);                          // DBC.008c
+          Serial1.print("]: ");                      // DBC.008c
+          Serial1.print(USBSwitchTime[u]);           // DBC.008c
+          Serial1.print("\t\tUSBSwitchCount[");        // DBC.008d
+          Serial1.print(u);                          // DBC.008d
+          Serial1.print("]: ");                      // DBC.008d
+          Serial1.println(USBSwitchCount[u]);        // DBC.008d
+        }                                            // DBC.008c
+        
+        Serial1.flush();
+        #endif                                       // DBC.008f
     }//end if (timeToUpdate.StartIfStopped(1000))
 
     uint16_t DurOn;
@@ -477,7 +537,7 @@ void handleLaptopInput(void)
 #define ASCII_CR            0x0D
 #define ASCII_LF            0x0A
 #define ASCII_ESC           0x1B
-
+    
     static char userIn[MAX_MENU_CHARS];     // MAX_MENU_CHARS Def'd in Maltbie_Helper.h
     static uint8_t indexUserIn = 0;
     int inByte;
@@ -696,6 +756,15 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 }
             }
             break;
+
+        case 'Q':  // DBC.008
+            {                                              // DBC.008
+              serialPtr->print(F("CDC_ACM_INTERFACE: "));  // DBC.008
+              serialPtr->println(CDC_ACM_INTERFACE);       // DBC.008
+              //serialPtr->print(F("HID_INTERFACE: "));      // DBC.008
+              //serialPtr->println(HID_INTERFACE);           // DBC.008 SLR HID_INTERFACE wasn't defined
+            }                                              // DBC.008
+            break;                                         // DBC.008
 
         default:
             serialPtr->print(F("\nUnknown command ["));

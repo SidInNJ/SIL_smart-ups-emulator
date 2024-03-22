@@ -21,12 +21,13 @@
 
 #ifndef HIDPOWERDEVICE_h
 #define HIDPOWERDEVICE_h
-
+// 
 #define _USING_HID
 
 
 
-#include "HID/HID.h"
+//#include "HID/HID.h"  // DBC.008
+#include "HID.h"        // DBC.008
 #include "WString.h"
 
 

@@ -229,6 +229,7 @@ HIDPowerDevice_::HIDPowerDevice_(void) {
 }
 
 void HIDPowerDevice_::begin(void) {
+		
     HID().begin();
     
     // set string ID here

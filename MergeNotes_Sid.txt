@@ -1,0 +1,13 @@
+Sid changed Serial/Serial1 to make use of #define's in these files:
+HandyHelpers.h
+HandyHelpers.cpp
+
+HID.h: modification to make definition of HID_INTERFACE dependant on CDC_ENABLED
+
+
+SmartUpsEmulator.ino:
+Using defines for serial ports
+Merged in Davis' additions
+
+Added directory "core" to get Davis' USB changes there. 
+Added some warnings to confirm the core files are being used.
