@@ -19,6 +19,8 @@
 
 #include <Arduino.h>
 
+#warning "TEMP COMPILE CONFIRM: desired main.cpp is being compiled."
+
 // Declared weak in Arduino.h to allow user redefinitions.
 int atexit(void (* /*func*/ )()) { return 0; }
 
@@ -30,7 +32,7 @@ void initVariant() { }
 void setupUSB() __attribute__((weak));
 void setupUSB() { }
 
-volatile bool USBCDCNeeded = false;      // DBC.008b
+volatile bool USBCDCNeeded = false;      // DBC.008b 
 volatile long USBSwitchTime[6] = {0};    // DBC.008c
 volatile long USBSwitchCount[6] = {0};   // DBC.008d
 

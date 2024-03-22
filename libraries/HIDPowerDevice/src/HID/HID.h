@@ -30,6 +30,8 @@
 
 #if defined(USBCON)
 
+#warning "TEMP COMPILE CONFIRM: desired HID.h is being compiled."
+
 #define _USING_HID
 
 // HID 'Driver'

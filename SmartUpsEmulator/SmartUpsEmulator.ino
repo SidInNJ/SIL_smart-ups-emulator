@@ -32,6 +32,12 @@ HandyHelpers MH; // My Handy Helper
 #warning "NOTE: Serial console via USB (CDC) is still enabled!"
 #endif
 
+#ifdef USBCON
+#warning "NOTE: USBCON is defined!"
+#else
+#warning "NOTE: USBCON is NOT defined!"
+#endif
+
 #define MINUPDATEINTERVAL   26
 
 int iIntTimer = 0;
@@ -200,7 +206,7 @@ int batVoltage = 1300;
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
 
-extern bool USBCDCNeeded;  // DBC.008b
+extern volatile bool USBCDCNeeded;  // DBC.008b
 extern bool AskedForCDC;   // DBC.008b
 extern long USBSwitchTime[6];  // DBC.008c
 extern long USBSwitchCount[6];
