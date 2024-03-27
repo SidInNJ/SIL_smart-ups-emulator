@@ -397,6 +397,10 @@ void InitDevDescrip() // Initialize Device Descriptor                           
 	USB_DeviceDescriptorIAD.packetSize0 = 64;                                        // DBC.008a
 	USB_DeviceDescriptorIAD.idVendor = USB_VID;                                      // DBC.008a
 	USB_DeviceDescriptorIAD.idProduct = USB_PID;                                     // DBC.008a
+    if (!USBCDCNeeded) {                                                          // DBC.009b
+         USB_DeviceDescriptorIAD.idVendor = USB_UPS_VID;                          // DBC.009b
+         USB_DeviceDescriptorIAD.idProduct = USB_UPS_PID;                         // DBC.009b
+    }          
 	USB_DeviceDescriptorIAD.deviceVersion = 0x100;                                   // DBC.008a
 	USB_DeviceDescriptorIAD.iManufacturer = IMANUFACTURER;                           // DBC.008a
 	USB_DeviceDescriptorIAD.iProduct = IPRODUCT;                                     // DBC.008a

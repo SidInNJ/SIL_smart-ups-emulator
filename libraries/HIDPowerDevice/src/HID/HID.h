@@ -66,12 +66,8 @@
 #define HID_REPORT_TYPE_OUTPUT  2
 #define HID_REPORT_TYPE_FEATURE 3
 
-#ifdef CDC_ENABLED                                                          // SLR
-#define HID_INTERFACE		(CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT)		// HID Interface
-#else
-#define HID_INTERFACE		0		// HID Interface                        // DBC.008
-#endif
-
+//#define HID_INTERFACE		(CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT)		// HID Interface  // DBC.008  CDC_ENABLED (0 + 2 = 2), CDC_DISABLED (0 + 0 = 0)
+#define HID_INTERFACE		0		// HID Interface                                            // DBC.008
 #define HID_FIRST_ENDPOINT	(CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT)
 #define HID_ENDPOINT_INT	(HID_FIRST_ENDPOINT)
 #define HID_ENDPOINT_OUT	(HID_FIRST_ENDPOINT+1)   

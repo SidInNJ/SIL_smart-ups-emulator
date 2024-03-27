@@ -23,20 +23,8 @@
 #include "HIDPowerDevice.h"
 #include "TimerHelpers.h"
 
-//#include "HID.h"    // SLR: to define HID_INTERFACE
-
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
-
-#ifdef CDC_ENABLED
-#warning "NOTE: Serial console via USB (CDC) is still enabled!"
-#endif
-
-#ifdef USBCON
-#warning "NOTE: USBCON is defined!"
-#else
-#warning "NOTE: USBCON is NOT defined!"
-#endif
 
 #define MINUPDATEINTERVAL   26
 
@@ -175,9 +163,6 @@ EEPROM_Struct StoreEE;
 void handleLaptopInput(void);
 void printHelp(void);
 void watchDogReset(void);
-//void printHelp(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);   // DBC.007
-//void printHelp(Stream *serialPtr = &Serial1, bool handleUsbOnlyOptions = true);  // DBC.007
-//void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);  // DBC.007
 void printHelp(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
 void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
 void showPersistentSettings(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
@@ -206,7 +191,7 @@ int batVoltage = 1300;
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
 
-extern volatile bool USBCDCNeeded;  // DBC.008b
+extern bool USBCDCNeeded;  // DBC.008b
 extern bool AskedForCDC;   // DBC.008b
 extern long USBSwitchTime[6];  // DBC.008c
 extern long USBSwitchCount[6];
@@ -226,7 +211,6 @@ void setup(void)
     Serial.print(F(", "));
     Serial.println(Serial.stopbits());
 #endif
-
 
 // #ifdef CDC_DISABLED
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
@@ -812,7 +796,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(F("         (High V A2D value: "));                      serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
         serialPtr->println(F(" To calibrate voltage sensing for this board:"));
         serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
-        serialPtr->println(F("  Short the together. Enter the command CL0 (Zero, not Oh)."));
+        serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
         serialPtr->println(F("  Hook the leads back up to the battery. Measure the voltage"));
         serialPtr->println(F("  with a good digital volt meter. Enter the command CHvvvv."));
         serialPtr->println(F("  where vvvv is the measured voltage in hundreths of a volt."));
