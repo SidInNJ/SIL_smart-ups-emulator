@@ -52,8 +52,7 @@ protected:
 class PluggableUSB_ {
 public:
   PluggableUSB_();
-  bool plug(PluggableUSBModule *node);                 // DBC.008b
-	//bool plug(PluggableUSBModule *node, bool CDCRrquired); // DBC.008b
+  bool plug(PluggableUSBModule *node);
   int getInterface(uint8_t* interfaceCount);
   int getDescriptor(USBSetup& setup);
   bool setup(USBSetup& setup);

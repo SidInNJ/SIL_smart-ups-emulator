@@ -1,22 +1,16 @@
 /*
- * Filename:  SmartUpsEmulator.008
- * Date:      8 Feb 2024
- *            This code works both when CDC_ENABLED is defined and when CDC_DISABLED is defined
- *            When CDC_ENABLED is defined output is written to the USB serial port
- *            When CDC_DISABLED is defined Output is written to the Serial1 (pins 0 & 1) hardware UART
+ * Filename:  SmartUpsEmulator.009
+ * Date:      21 Mar 2024
+ *            Leave CDC_ENABLED defined
+ *            Boot without pressing switch on pin 2 to run as HID device only
+ *            Blue LED will light up
+ *            Press and hold switch on pin 2 at bootup to run as HID device and enable CDC serial input/output on USB serial port
+ *            Release switch when green LED lights up
 */
 
 /*
   In USBDesc.h
-    Change CDC_ACM_INTERFACE	0 -> CDC_ACM_INTERFACE	1  // Leave interface 0 open for HID device
-    Change CDC_DATA_INTERFACE	1 -> CDC_DATA_INTERFACE	2
-
-  In HID.h
-    Change HID_INTERFACE (CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT) -> 0
-                                  0         +         2
-  This doesn't work. The Device Monitoring Studio does not see the device.
-  The USB Device Tree Viewer lists the device with "Device has Problem Code 10 (failed start)."
-
+    Uncomment SERIAL1_DEBUG to enable Serial1 debugging messages (pins 0 & 1) hardware UART
 */
 
 //#include <HIDPowerDevice.h>
@@ -192,9 +186,9 @@ Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
 
 extern bool USBCDCNeeded;  // DBC.008b
-extern bool AskedForCDC;   // DBC.008b
 extern long USBSwitchTime[6];  // DBC.008c
-extern long USBSwitchCount[6];
+extern long USBSwitchCount[6]; // DBC.008d
+extern char USBDebug[512];     // DBC.009
 
 void setup(void)
 {
@@ -260,16 +254,6 @@ void setup(void)
 #ifdef CDC_ENABLED
     PowerDevice.setOutput(Serial);
 #endif
-//#ifdef CDC_ENABLED
-//    if (USBCDCNeeded)
-//    {
-//        PowerDevice.setOutput(Serial);
-//    }
-//    else
-//    {
-//        PowerDevice.setOutput(Serial1);
-//    }
-//#endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
     pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
@@ -447,6 +431,8 @@ void loop(void)
                     PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
                     if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
                     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+                    DBPRINTLN("Sent bat status to PC");
+
                 //}
 
                 // DOYET: attache LED to pint 10
@@ -491,24 +477,14 @@ void loop(void)
         DBPRINTLN(batVoltage);
         SERIALPORT_PRINT("BatV*100: ");  // DBC.008
         SERIALPORT_PRINTLN(batVoltage);  // DBC.008
-        #ifdef SERIAL1_DEBUG                         // DBC.008f   
-        Serial1.print("USBCDCNeeded: ");  // DBC.008b
-        Serial1.print(USBCDCNeeded);      // DBC.008b
-        Serial1.print("  AskedForCDC: "); // DBC.008b
-        Serial1.println(AskedForCDC);     // DBC.008b
-        for (int u=0; u<6; u++) {                    // DBC.008c
-          Serial1.print("USBSwitchTime[");           // DBC.008c
-          Serial1.print(u);                          // DBC.008c
-          Serial1.print("]: ");                      // DBC.008c
-          Serial1.print(USBSwitchTime[u]);           // DBC.008c
-          Serial1.print("\t\tUSBSwitchCount[");        // DBC.008d
-          Serial1.print(u);                          // DBC.008d
-          Serial1.print("]: ");                      // DBC.008d
-          Serial1.println(USBSwitchCount[u]);        // DBC.008d
-        }                                            // DBC.008c
+
+        SERIALPORT_PRINTLN(USBDebug);                   // DBC.009
         
-        Serial1.flush();
-        #endif                                       // DBC.008f
+        if(USBCDCNeeded) 
+            Serial.flush(); 
+        else 
+            Serial1.flush();
+
     }//end if (timeToUpdate.StartIfStopped(1000))
 
     uint16_t DurOn;

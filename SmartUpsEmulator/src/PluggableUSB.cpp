@@ -25,6 +25,8 @@
 
 extern uint8_t _initEndpoints[];
 
+extern char USBDebug[512];          // DBC.009
+
 int PluggableUSB_::getInterface(uint8_t* interfaceCount)
 {
 	int sent = 0;
@@ -70,19 +72,11 @@ bool PluggableUSB_::setup(USBSetup& setup)
 	return false;
 }
 
-#warning "TEMP COMPILE CONFIRM: desired PluggableUSB.cpp is being compiled."
-
 extern bool USBCDCNeeded;  // DBC.008b
-extern bool AskedForCDC;          // DBC.008b
-extern long USBSwitchTime[6];       // DBC.008c
-extern long USBSwitchCount[6];      // DBC.008d
+extern char USBDebug[512];          // DBC.009
 
-bool PluggableUSB_::plug(PluggableUSBModule *node)  // DBC.008b
-//bool PluggableUSB_::plug(PluggableUSBModule *node, bool CDCRrquired)  // DBC.008b
+bool PluggableUSB_::plug(PluggableUSBModule *node)
 {
-  #ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.println("Called PluggableUSB_::plug");    // DBC.008d
-	#endif
 	if ((lastEp + node->numEndpoints) > USB_ENDPOINTS) {
 		return false;
 	}
@@ -97,39 +91,28 @@ bool PluggableUSB_::plug(PluggableUSBModule *node)  // DBC.008b
 		current->next = node;
 	}
 
-	//node->pluggedInterface = lastIf;                   // DBC.008b
-	//node->pluggedEndpoint = lastEp;                    // DBC.008b
-	//node->pluggedInterface = USBCDCNeeded ? lastIf : 0;// DBC.008b
-	//node->pluggedEndpoint = USBCDCNeeded ? lastEp : 0; // DBC.008b
-  //if (digitalRead(2) == LOW) {           // DBC.008b Switch is pressed
-	pinMode(2,INPUT_PULLUP);                                 // DBC.008d  Switch, Press for CDC, Green LED
-  if (USBCDCNeeded || (digitalRead(2) == LOW)) {           // DBC.008d Switch is pressed
-		USBCDCNeeded = true;                 // DBC.008d
-		digitalWrite(7, HIGH);               // DBC.008a Green on
-		USBSwitchTime[4] = millis();         // DBC.008c
-		USBSwitchCount[4]++;                   // DBC.008d
-    //AskedForCDC = false;                 // DBC.008b
-    //USBCDCNeeded = false;                // DBC.008b
-		//node->pluggedInterface = lastIf;                 // DBC.008b
-		//node->pluggedEndpoint = lastEp;                  // DBC.008b
-		node->pluggedInterface = CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT;                       // DBC.008b
-		node->pluggedEndpoint = CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT;                         // DBC.008b
+	pinMode(2,INPUT_PULLUP);                             // DBC.008d  Switch, Press for CDC, Green LED
+  if (USBCDCNeeded || (digitalRead(2) == LOW)) {       // DBC.008d  Switch is pressed. Not sure why the switch needs to be read here. Errors without it
+		node->pluggedInterface = CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT;    // DBC.008b 0 + 2 = 2
+		node->pluggedEndpoint = CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT;      // DBC.008b 1 + 3 = 4
 	}
 	else                                                 // DBC.008b
 	{                                                    // DBC.008b
-		digitalWrite(6, HIGH);               // DBC.008a Blue on
-		USBSwitchTime[4] = -millis();        // DBC.008c
-		USBSwitchCount[4]++;                   // DBC.008d
-    //AskedForCDC = true;                  // DBC.008b
-    //USBCDCNeeded = true;                 // DBC.008b
 		node->pluggedInterface = 0;                        // DBC.008b
 		node->pluggedEndpoint = 0;                         // DBC.008b
 	}                                                    // DBC.008b
+	
 	lastIf += node->numInterfaces;
 	for (uint8_t i = 0; i < node->numEndpoints; i++) {
 		_initEndpoints[lastEp] = node->endpointType[i];
 		lastEp++;
 	}
+	//sprintf(&USBDebug[strlen(USBDebug)], "node->pluggedInterface %i\r\n", node->pluggedInterface);  // DBC.009
+	//sprintf(&USBDebug[strlen(USBDebug)], "node->pluggedEndpoint %i\r\n", node->pluggedEndpoint);        // DBC.009
+	//sprintf(&USBDebug[strlen(USBDebug)], "node->numInterfaces %i\r\n", node->numInterfaces);  // DBC.009
+	//sprintf(&USBDebug[strlen(USBDebug)], "node->numEndpoints %i\r\n", node->numEndpoints);  // DBC.009
+	//sprintf(&USBDebug[strlen(USBDebug)], "lastIf %i\r\n", lastIf);        // DBC.009
+	//sprintf(&USBDebug[strlen(USBDebug)], "lastEp %i\r\n", lastEp);        // DBC.009
 	return true;
 	// restart USB layer???
 }

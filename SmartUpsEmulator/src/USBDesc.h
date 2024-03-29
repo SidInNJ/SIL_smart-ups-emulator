@@ -18,8 +18,6 @@
 
 #define PLUGGABLE_USB_ENABLED
 
-#warning "TEMP COMPILE CONFIRM: using USBDesc.h, as desired"
-
 #if defined(EPRST6)
 #define USB_ENDPOINTS 7 // AtMegaxxU4
 #else
@@ -64,9 +62,8 @@
 #define IPRODUCT        2
 #define ISERIAL         3
 
-//#define USB_UPS_VID 0x0463  // Eaton
-//#define USB_UPS_PID 0xffff      // Eaton UPS
-#define USB_UPS_VID 0x051d    // APC
-#define USB_UPS_PID 0x0003    // APC UPS  // 0x001 Not valid with Synology // 0x0002 Synology Recognized // 0x0003 Synology likes best
-
 //#define SERIAL1_DEBUG  // DBC.008f  // Uncomment this line to envoke Serial1 debugging
+//#define USB_UPS_VID 0x0463  // Eaton
+//#define USB_UPS_PID 0xffff  // Eaton UPS
+#define USB_UPS_VID 0x051d  // APC
+#define USB_UPS_PID 0x0003  // APC UPS  // 0x001 Not valid with Synology // 0x0002 Synology Recognized // 0x0003 Synology likes best

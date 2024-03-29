@@ -14,7 +14,7 @@
 #include <IPAddress.h>
 #include <EEPROM.h>     // for dumpEEProm()
 
-extern bool USBCDCNeeded;  // DBC.008b
+extern bool USBCDCNeeded;  // 
 
 #ifdef CDC_ENABLED
     //#define SERIALPORT Serial   // Using USB Serial
@@ -33,6 +33,9 @@ extern bool USBCDCNeeded;  // DBC.008b
     #define SERIALPORT_Addr (USBCDCNeeded ? (Stream *)&Serial : (Stream *)&Serial1)
     #define SERIALPORT_PRINTLN(args...) {if(USBCDCNeeded) Serial.println(args); else Serial1.println(args); }
     #define SERIALPORT_PRINT(args...) {if(USBCDCNeeded) Serial.print(args); else Serial1.print(args); }
+    #define SERIALPORT_AVAILABLE() (USBCDCNeeded ? Serial.available() : Serial1.available())
+    #define SERIALPORT_READ() (USBCDCNeeded ? Serial.read() : Serial1.read())
+    #define SERIALPORT_WRITE(a) (USBCDCNeeded ? Serial.write(a) : Serial1.write(a))
 #endif
 
 // Common ASCII Chars

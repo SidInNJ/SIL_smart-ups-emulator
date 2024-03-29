@@ -60,9 +60,6 @@ class USBDevice_
 public:
 	USBDevice_();
 	bool configured();
-
-	bool getCDCNeeded();         // DBC.008
-	bool setCDCNeeded(bool val); // DBC.008
 	void attach();
 	void detach();	// Serial port goes down too...
 	void poll();

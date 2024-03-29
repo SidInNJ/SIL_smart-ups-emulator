@@ -23,8 +23,6 @@
 
 #if defined(USBCON)
 
-#warning "TEMP COMPILE CONFIRM: desired USBCore.cpp is being compiled."
-
 /** Pulse generation counters to keep track of the number of milliseconds remaining for each pulse type */
 #define TX_RX_LED_PULSE_MS 100
 volatile u8 TxLEDPulse; /**< Milliseconds remaining for data Tx LED pulse */
@@ -74,8 +72,6 @@ const u8 STRING_MANUFACTURER[] PROGMEM = USB_MANUFACTURER;
 //	DEVICE DESCRIPTOR
 
 #ifdef CDC_ENABLED
-//const DeviceDescriptor USB_DeviceDescriptorIAD =                                       // DBC.008
-//	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);  // DBC.008
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
 	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
 #else // CDC_DISABLED
@@ -83,7 +79,6 @@ DeviceDescriptor USB_DeviceDescriptorIAD =                                      
 // which means "Interface Association Descriptor" - that's needed for the CDC,
 // but doesn't make much sense as a default for custom devices when CDC is disabled.
 // (0x00 means "Use class information in the Interface Descriptors" which should be generally ok)
-//const DeviceDescriptor USB_DeviceDescriptorIAD =                                       // DBC.008
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
 	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
 #endif
@@ -94,7 +89,7 @@ DeviceDescriptor USB_DeviceDescriptorIAD =                                      
 volatile u8 _usbConfiguration = 0;
 volatile u8 _usbCurrentStatus = 0; // meaning of bits see usb_20.pdf, Figure 9-4. Information Returned by a GetStatus() Request to a Device
 volatile u8 _usbSuspendState = 0;  // copy of UDINT to check SUSPI and WAKEUPI bits
-volatile u8 _usbCDCNeeded = false; // DBC.008
+
 extern bool USBCDCNeeded;  // DBC.008b
 
 static inline void WaitIN(void)
@@ -360,11 +355,11 @@ u8 _initEndpoints[USB_ENDPOINTS] =
 #define EP_DOUBLE_64 0x36	// Other endpoints
 #define EP_SINGLE_16 0x12
 
-extern long USBSwitchTime[6];                                                    // DBC.008c
-extern long USBSwitchCount[6];                                                   // DBC.008d
+#define USE_OLD_DEVICE_INIT false
 
+#if USE_OLD_DEVICE_INIT
 static                                                                             // DBC.008a
-void InitDevDescrip() // Initialize Device Descriptor                              // DBC.008a
+void InitDevDescrip() // Initialize Device Descriptor                              // DBC.008a   DOYET SLR NEED TO MERGE DAVIS LATEST HERE YET
 {                                                                                  // DBC.008a
 	//digitalWrite(5, HIGH);  delay(1000); digitalWrite(5, LOW);                       // DBC.008a Yellow 1 second blink
 	USB_DeviceDescriptorIAD.len = 18;                                                // DBC.008a
@@ -408,6 +403,19 @@ void InitDevDescrip() // Initialize Device Descriptor                           
 	USB_DeviceDescriptorIAD.bNumConfigurations = 1;                                  // DBC.008a
 }                                                                                  // DBC.008a
 
+#else
+static                                                                             // DBC.008a
+void InitDevDescrip() // Initialize Device Descriptor                              // DBC.008a
+{                                                                                  // DBC.008a
+  if (USBCDCNeeded) {                                                                                               // DBC.009a Switch is pressed
+		USB_DeviceDescriptorIAD = D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a
+	}                                                                                                                 // DBC.009a
+	else {                                                                                                            // DBC.009a
+		USB_DeviceDescriptorIAD = D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a
+	}                                                                                                                 // DBC.009a
+}                                                                                  // DBC.008a
+#endif
+
 static
 void InitEP(u8 index, u8 type, u8 size)
 {
@@ -415,67 +423,40 @@ void InitEP(u8 index, u8 type, u8 size)
 	UECONX = (1<<EPEN);
 	UECFG0X = type;
 	UECFG1X = size;
-	//if (USB_DeviceDescriptorIAD.deviceClass == 0xEF) digitalWrite(5, HIGH);  // DBC.008a Yellow on
-	//digitalWrite(5, HIGH);  delay(3000); digitalWrite(5, LOW);               // DBC.008a Yellow 1 second blink
-	
-	//if (!USBDevice.getCDCNeeded()) {                      // DBC.008
-	/*
-  if (!(digitalRead(2) == LOW)) {                       // DBC.008b Switch is not pressed
-		USB_DeviceDescriptorIAD.deviceClass = 0x00;         // DBC.008
-		USB_DeviceDescriptorIAD.deviceSubClass = 0x00;      // DBC.008
-		USB_DeviceDescriptorIAD.deviceProtocol = 0x00;      // DBC.008
-		USBSwitchTime[1] = -millis();                       // DBC.008c
-	}                                                     // DBC.008
-	else {                                                // DBC.008c
-		USBSwitchTime[1] = millis();                        // DBC.008c
-	}                                                     // DBC.008c
-	*/
-	//if (USBCDCNeeded || (digitalRead(2) == LOW)) {        // DBC.008d Switch is pressed
+#if USE_OLD_DEVICE_INIT
 	if (USBCDCNeeded) {        // DBC.008d Switch is pressed
 		//USBCDCNeeded = true;                                // DBC.008d
-		USBSwitchTime[1] = millis();                        // DBC.008c
-		USBSwitchCount[1]++;                                // DBC.008d
+		//USBSwitchTime[1] = millis();                        // DBC.008c
+		//USBSwitchCount[1]++;                                // DBC.008d
 	}
 	else {
 		USB_DeviceDescriptorIAD.deviceClass = 0x00;         // DBC.008
 		USB_DeviceDescriptorIAD.deviceSubClass = 0x00;      // DBC.008
 		USB_DeviceDescriptorIAD.deviceProtocol = 0x00;      // DBC.008
-		USBSwitchTime[1] = -millis();                       // DBC.008c
-		USBSwitchCount[1]++;                                // DBC.008d
+		//USBSwitchTime[1] = -millis();                       // DBC.008c
+		//USBSwitchCount[1]++;                                // DBC.008d
 	}
+#endif
 }
+
+
+
+extern char USBDebug[512];          // DBC.009
+
 
 static
 void InitEndpoints()
 {
 	
 	u8 sizeOfEP = sizeof(_initEndpoints);  // DBC.008
-	//if (!USBDevice.getCDCNeeded()) {                                                                              // DBC.008
-	/*
-  if (!(digitalRead(2) == LOW)) {                                                                               // DBC.008b Switch is not pressed
-		USBSwitchTime[2] = -millis();                                                                               // DBC.008c
-		sizeOfEP = 1;  // Only one element needed, _initEndpoints[0] = 0;                                           // DBC.008
-	}                                                                                                             // DBC.008
-	else {                                                                                                        // DBC.008c
-		USBSwitchTime[2] = millis();                                                                                // DBC.008c
-	}                                                                                                             // DBC.008c
-	*/
-	
-  //if (USBCDCNeeded || (digitalRead(2) == LOW)) {           // DBC.008d Switch is pressed
-  if (USBCDCNeeded) {           // DBC.008d Switch is pressed
-		//USBCDCNeeded = true;                 // DBC.008d
-		USBSwitchTime[2] = millis();         // DBC.008c
-		USBSwitchCount[2]++;                 // DBC.008d
-	}
-	else {
-		USBSwitchTime[2] = -millis();                                                                               // DBC.008c
-		USBSwitchCount[2]++;                 // DBC.008d
-		sizeOfEP = 1;  // Only one element needed, _initEndpoints[0] = 0;                                           // DBC.008
-	}
+  if (!USBCDCNeeded) {                   // DBC.009b Switch is pressed
+		sizeOfEP = 1;                        // DBC.008  // Only one element needed, _initEndpoints[0] = 0;                                           // DBC.008
+	}                                      // DBC.008
 	
 	//for (u8 i = 1; i < sizeof(_initEndpoints) && _initEndpoints[i] != 0; i++)  // DBC.008
 	for (u8 i = 1; i < sizeOfEP && _initEndpoints[i] != 0; i++)                  // DBC.008	
 	{
+		//sprintf(&USBDebug[strlen(USBDebug)], "_initEndpoints[%i]: %i\r\n", i, _initEndpoints[i]);        // DBC.009  Davis - This never gets called. Why?
 		UENUM = i;
 		UECONX = (1<<EPEN);
 		UECFG0X = _initEndpoints[i];
@@ -500,9 +481,6 @@ bool ClassInterfaceRequest(USBSetup& setup)
 
 	if (CDC_ACM_INTERFACE == i)
 	{                                                             // DBC.008b
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-		Serial1.println(F("CDC_ACM_INTERFACE:"));                   // DBC.008b
-		#endif
 		return CDC_Setup(setup);
 	}                                                             // DBC.008b
 #endif
@@ -593,46 +571,24 @@ int USB_RecvControl(void* d, int len)
 
 static u8 SendInterfaces()
 {
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.println(F("Called SendInterfaces: "));                    // DBC.008b
-	#endif                                       // DBC.008f
 	u8 interfaces = 0;
 	u8 cdcInterfaces = 0;                 // DBC.008b
 
 #ifdef CDC_ENABLED
-	//if (USBDevice.getCDCNeeded())         // DBC.008
-  //if (digitalRead(2) == LOW)             // DBC.008b Switch is pressed
-  //if (USBCDCNeeded || (digitalRead(2) == LOW))            // DBC.008d Switch is pressed
-  if (USBCDCNeeded)            // DBC.008d Switch is pressed
-	{                                      // DBC.008
-		//USBCDCNeeded = true;                 // DBC.008d
-		USBSwitchTime[3] = millis();                               // DBC.008c
-		USBSwitchCount[3]++;                                       // DBC.008d
+  if (USBCDCNeeded)                                            // DBC.008d Switch is pressed
+	{                                                            // DBC.008
 	CDC_GetInterface(&interfaces);
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-		Serial1.print(F("CDC_GetInterface count:           "));    // DBC.008b
-		Serial1.println(interfaces);                               // DBC.008b
-		#endif                                       // DBC.008f
 		cdcInterfaces = interfaces;                                // DBC.008b
-	}                                     // DBC.008
-	else {                                                       // DBC.008c
-		USBSwitchTime[3] = -millis();                              // DBC.008c
-		USBSwitchCount[3]++;                                       // DBC.008d
-	}                                                            // DBC.008c
+	}                                                            // DBC.008
 #endif
 
 #ifdef PLUGGABLE_USB_ENABLED
 	PluggableUSB().getInterface(&interfaces);
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.print(F("PluggableUSB Interface count:     "));      // DBC.008b
-	Serial1.println(interfaces - cdcInterfaces);                 // DBC.008b
-	#endif                                       // DBC.008f
+	#ifdef SERIAL1_DEBUG                                         // DBC.008f   
+	//sprintf(&USBDebug[strlen(USBDebug)], "interfaces: %i\r\n", interfaces);        // DBC.009
+	#endif                                                       // DBC.008f
 #endif
 
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.print(F("SendInterfaces count:             "));      // DBC.008b
-	Serial1.println(interfaces);                                 // DBC.008b
-	#endif                                       // DBC.008f
 	return interfaces;
 }
 
@@ -642,14 +598,6 @@ static u8 SendInterfaces()
 static
 bool SendConfiguration(int maxlen)
 {
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	if (!Serial1) {                   // DBC.008
-		Serial1.begin(115200);          // DBC.008
-		while (!Serial1);               // DBC.008
-		delay(1000);                    // DBC.008
-	}                                 // DBC.008
-	Serial1.println(F("Called SendConfiguration: Build configuration descriptor"));                    // DBC.008
-	#endif                                       // DBC.008f
 	//	Count and measure interfaces
 	InitControl(0);
 	u8 interfaces = SendInterfaces();
@@ -667,20 +615,6 @@ typedef struct {
 	u8	maxPower;
 } ConfigDescriptor;
 
-
-
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.println(F("Config Descriptor: "));                                            // DBC.008
-	Serial1.print(F(" bLength:             ")); Serial1.println(config.len);              // DBC.008
-	Serial1.print(F(" bDescriptorType:     ")); Serial1.println(config.dtype);            // DBC.008
-	Serial1.print(F(" wTotalLength:        ")); Serial1.println(config.clen);             // DBC.008
-	Serial1.print(F(" bNumInterfaces:      ")); Serial1.println(config.numInterfaces);    // DBC.008
-	Serial1.print(F(" bConfigurationValue: ")); Serial1.println(config.config);           // DBC.008b
-	Serial1.print(F(" iConfiguration:      ")); Serial1.println(config.iconfig);          // DBC.008
-	Serial1.print(F(" bmAttributes:        ")); Serial1.println(config.attributes, BIN);  // DBC.008
-	Serial1.print(F(" bMaxPower:           ")); Serial1.println(config.maxPower);         // DBC.008
-	#endif                                       // DBC.008f
-
 	//	Now send them
 	InitControl(maxlen);
 	USB_SendControl(0,&config,sizeof(ConfigDescriptor));
@@ -691,24 +625,7 @@ typedef struct {
 static
 bool SendDescriptor(USBSetup& setup)
 {
-	bool progMem = true;              // DBC.008
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	/*                                // DBC.008
-	if (!Serial1) {                   // DBC.008
-		Serial1.begin(115200);          // DBC.008
-		while (!Serial1);               // DBC.008
-		delay(1000);                    // DBC.008
-	}                                 // DBC.008
-	Serial1.println(F("Called SendDescriptor"));                                        // DBC.008
-	Serial1.println(F("Setup: "));                                                      // DBC.008
-	Serial1.print(F(" bmRequestType: ")); Serial1.println(setup.bmRequestType, BIN);    // DBC.008
-	Serial1.print(F(" bRequest:      ")); Serial1.println(setup.bRequest);              // DBC.008
-	Serial1.print(F(" wValueL:     0x")); Serial1.println(setup.wValueL, HEX);          // DBC.008
-	Serial1.print(F(" wValueH:     0x")); Serial1.println(setup.wValueH, HEX);          // DBC.008
-	Serial1.print(F(" wIndex:        ")); Serial1.println(setup.wIndex);                // DBC.008
-	Serial1.print(F(" wLength:       ")); Serial1.println(setup.wLength);               // DBC.008
-	*/                                                                                  // DBC.008
-	#endif                                       // DBC.008f
+	bool progMem = true;                                                      // DBC.008
 	u8 t = setup.wValueH;
 	if (USB_CONFIGURATION_DESCRIPTOR_TYPE == t)
 		return SendConfiguration(setup.wLength);
@@ -716,10 +633,9 @@ bool SendDescriptor(USBSetup& setup)
 	InitControl(setup.wLength);
 #ifdef PLUGGABLE_USB_ENABLED
 	int ret = PluggableUSB().getDescriptor(setup);
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	Serial1.print(F("PluggableUSB().getDescriptor return value: "));          // DBC.008a
-	Serial1.println(ret);                                                     // DBC.008a
-	#endif                                       // DBC.008f
+	#ifdef SERIAL1_DEBUG                                                      // DBC.008f   
+	//sprintf(&USBDebug[strlen(USBDebug)], "ret: %i\r\n", ret);                 // DBC.009
+	#endif                                                                    // DBC.008f
 	if (ret != 0) {
 		return (ret > 0 ? true : false);
 	}
@@ -728,33 +644,12 @@ bool SendDescriptor(USBSetup& setup)
 	const u8* desc_addr = 0;
 	if (USB_DEVICE_DESCRIPTOR_TYPE == t)
 	{
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-		if (!Serial1) {                   // DBC.008a
-			Serial1.begin(115200);          // DBC.008a
-			while (!Serial1);               // DBC.008a
-			delay(1000);                    // DBC.008a
-		}                                 // DBC.008a
-		Serial1.println(F("Sending device descriptor"));                                                            // DBC.008
-		Serial1.print(F(" bLength:            ")); Serial1.println(USB_DeviceDescriptorIAD.len);                    // DBC.008
-		Serial1.print(F(" bDescriptorType:    ")); Serial1.println(USB_DeviceDescriptorIAD.dtype);                  // DBC.008
-		Serial1.print(F(" bcdUSB:           0x")); Serial1.println(USB_DeviceDescriptorIAD.usbVersion, HEX);        // DBC.008
-		Serial1.print(F(" bDeviceClass:     0x")); Serial1.println(USB_DeviceDescriptorIAD.deviceClass, HEX);       // DBC.008
-		Serial1.print(F(" bDeviceSubClass:  0x")); Serial1.println(USB_DeviceDescriptorIAD.deviceSubClass, HEX);    // DBC.008
-		Serial1.print(F(" bDeviceProtocol:  0x")); Serial1.println(USB_DeviceDescriptorIAD.deviceProtocol, HEX);    // DBC.008
-		Serial1.print(F(" bMaxPaxketSize0:  0x")); Serial1.println(USB_DeviceDescriptorIAD.packetSize0);            // DBC.008
-		Serial1.print(F(" idVendor:         0x")); Serial1.println(USB_DeviceDescriptorIAD.idVendor, HEX);          // DBC.008
-		Serial1.print(F(" idProduct:        0x")); Serial1.println(USB_DeviceDescriptorIAD.idProduct, HEX);         // DBC.008
-		Serial1.print(F(" bcdDevice:        0x")); Serial1.println(USB_DeviceDescriptorIAD.deviceVersion, HEX);     // DBC.008
-		Serial1.print(F(" iManufacturer:      ")); Serial1.println(USB_DeviceDescriptorIAD.iManufacturer);          // DBC.008
-		Serial1.print(F(" iProduct:           ")); Serial1.println(USB_DeviceDescriptorIAD.iProduct);               // DBC.008
-		Serial1.print(F(" iSerialNumber:      ")); Serial1.println(USB_DeviceDescriptorIAD.iSerialNumber);          // DBC.008
-		Serial1.print(F(" bNumConfigurations: ")); Serial1.println(USB_DeviceDescriptorIAD.bNumConfigurations);     // DBC.008
-		#endif                                       // DBC.008f
+		if (!USBCDCNeeded) {                               // DBC.009b
+			USB_DeviceDescriptorIAD.idVendor = USB_UPS_VID;  // DBC.009b
+			USB_DeviceDescriptorIAD.idProduct = USB_UPS_PID; // DBC.009b
+		}                                                  // DBC.009b
+		
 		desc_addr = (const u8*)&USB_DeviceDescriptorIAD;
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-		Serial1.print(F(" &USB_DeviceDescriptorIAD: ")); Serial1.println((long)&USB_DeviceDescriptorIAD, HEX);      // DBC.008
-		Serial1.print(F(" desc_addr:                ")); Serial1.println((long)desc_addr, HEX);                     // DBC.008
-		#endif                                       // DBC.008f
 		progMem = false;
 	}
 	else if (USB_STRING_DESCRIPTOR_TYPE == t)
@@ -763,29 +658,15 @@ bool SendDescriptor(USBSetup& setup)
 			desc_addr = (const u8*)&STRING_LANGUAGE;
 		}
 		else if (setup.wValueL == IPRODUCT) {
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("Sending string: Product ID: "));                                                  // DBC.008
-			for (int c=0; c<strlen(USB_PRODUCT); c++) Serial1.print((char)pgm_read_byte(&STRING_PRODUCT[c]));  // DBC.008
-			Serial1.println();                                                                                 // DBC.008
-			#endif                                       // DBC.008f
 			return USB_SendStringDescriptor(STRING_PRODUCT, strlen(USB_PRODUCT), TRANSFER_PGM);
 		}
 		else if (setup.wValueL == IMANUFACTURER) {
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("Sending string: Manufacturer name: "));                                                     // DBC.008
-			for (int c=0; c<strlen(USB_MANUFACTURER); c++) Serial1.print((char)pgm_read_byte(&STRING_MANUFACTURER[c]));  // DBC.008
-			Serial1.println();                                                                                           // DBC.008
-			#endif                                       // DBC.008f
 			return USB_SendStringDescriptor(STRING_MANUFACTURER, strlen(USB_MANUFACTURER), TRANSFER_PGM);
 		}
 		else if (setup.wValueL == ISERIAL) {
 #ifdef PLUGGABLE_USB_ENABLED
 			char name[ISERIAL_MAX_LEN];
 			PluggableUSB().getShortName(name);
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("Sending string: iSerialNumber: "));                // DBC.008
-			Serial1.println(name);                                              // DBC.008
-			#endif                                       // DBC.008f
 			return USB_SendStringDescriptor((uint8_t*)name, strlen(name), 0);
 #endif
 		}
@@ -832,25 +713,6 @@ ISR(USB_COM_vect)
 
     bool ok = true;
 
-	#ifdef SERIAL1_DEBUG                         // DBC.008f   
-	if (!Serial1) {                   // DBC.008
-		Serial1.begin(115200);          // DBC.008
-		while (!Serial1);               // DBC.008
-		delay(1000);                    // DBC.008
-	}                                 // DBC.008
-	Serial1.print(F("\nRequest received, type: "));                     // DBC.008
-	Serial1.print(setup.bRequest);                                      // DBC.008b
-	Serial1.print(F(", D6.5 type: "));                                  // DBC.008b
-	Serial1.println((setup.bmRequestType >> 4) &  0x3);                 // DBC.008b
-	Serial1.println(F("Setup Packet: "));                                               // DBC.008b
-	Serial1.print(F(" bmRequestType: ")); Serial1.println(setup.bmRequestType, BIN);    // DBC.008
-	Serial1.print(F(" bRequest:      ")); Serial1.println(setup.bRequest);              // DBC.008
-	Serial1.print(F(" wValueL:     0x")); Serial1.println(setup.wValueL, HEX);          // DBC.008
-	Serial1.print(F(" wValueH:     0x")); Serial1.println(setup.wValueH, HEX);          // DBC.008
-	Serial1.print(F(" wIndex:        ")); Serial1.println(setup.wIndex);                // DBC.008
-	Serial1.print(F(" wLength:       ")); Serial1.println(setup.wLength);               // DBC.008
-	#endif                                       // DBC.008f
-
 	if (REQUEST_STANDARD == (requestType & REQUEST_TYPE))
 	{
 		//	Standard Requests
@@ -858,9 +720,6 @@ ISR(USB_COM_vect)
 		u16 wValue = setup.wValueL | (setup.wValueH << 8);
 		if (GET_STATUS == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("GET_STATUS: "));      // DBC.008b
-			#endif                                       // DBC.008f
 			if (requestType == (REQUEST_DEVICETOHOST | REQUEST_STANDARD | REQUEST_DEVICE))
 			{
 				Send8(_usbCurrentStatus);
@@ -876,12 +735,6 @@ ISR(USB_COM_vect)
 		}
 		else if (CLEAR_FEATURE == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("CLEAR_FEATURE: "));      // DBC.008a
-			Serial1.print(setup.wValueL);             // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wValueH);           // DBC.008a
-			#endif                                       // DBC.008f
 			if((requestType == (REQUEST_HOSTTODEVICE | REQUEST_STANDARD | REQUEST_DEVICE))
 				&& (wValue == DEVICE_REMOTE_WAKEUP))
 			{
@@ -890,12 +743,6 @@ ISR(USB_COM_vect)
 		}
 		else if (SET_FEATURE == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("SET_FEATURE: "));        // DBC.008a
-			Serial1.print(setup.wValueL);             // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wValueH);           // DBC.008a
-			#endif                                       // DBC.008f
 			if((requestType == (REQUEST_HOSTTODEVICE | REQUEST_STANDARD | REQUEST_DEVICE))
 				&& (wValue == DEVICE_REMOTE_WAKEUP))
 			{
@@ -904,46 +751,23 @@ ISR(USB_COM_vect)
 		}
 		else if (SET_ADDRESS == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("SET_ADDRESS: "));        // DBC.008
-			Serial1.println(setup.wValueL);           // DBC.008
-			#endif                                       // DBC.008f
 			WaitIN();
 			UDADDR = setup.wValueL | (1<<ADDEN);
 		}
 		else if (GET_DESCRIPTOR == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("GET_DESCRIPTOR: "));     // DBC.008a
-			Serial1.print(setup.wValueL);             // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wValueH);           // DBC.008a
-			#endif                                       // DBC.008f
 			ok = SendDescriptor(setup);
 		}
 		else if (SET_DESCRIPTOR == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("SET_DESCRIPTOR: "));     // DBC.008a
-			Serial1.print(setup.wValueL);             // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wValueH);           // DBC.008a
-			#endif                                       // DBC.008f
 			ok = false;
 		}
 		else if (GET_CONFIGURATION == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("GET_CONFIGURATION: "));  // DBC.008a
-			#endif                                       // DBC.008f
 			Send8(1);
 		}
 		else if (SET_CONFIGURATION == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("SET_CONFIGURATION: "));  // DBC.008a
-			Serial1.println(setup.wValueL);           // DBC.008a
-			#endif                                       // DBC.008f
 			if (REQUEST_DEVICE == (requestType & REQUEST_RECIPIENT))
 			{
 				InitEndpoints();
@@ -953,29 +777,13 @@ ISR(USB_COM_vect)
 		}
 		else if (GET_INTERFACE == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("GET_INTERFACE: "));      // DBC.008a
-			Serial1.println(setup.wIndex);            // DBC.008a
-			#endif                                       // DBC.008f
 		}
 		else if (SET_INTERFACE == r)
 		{
-			#ifdef SERIAL1_DEBUG                         // DBC.008f   
-			Serial1.print(F("SET_INTERFACE: "));      // DBC.008a
-			Serial1.print(setup.wValueL);             // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wValueH);           // DBC.008a
-			Serial1.print(", ");                      // DBC.008a
-			Serial1.println(setup.wIndex);            // DBC.008a
-			#endif                                       // DBC.008f
 		}
 	}
 	else
 	{
-		#ifdef SERIAL1_DEBUG                         // DBC.008f   
-		Serial1.print(F("Class Interface Request: "));      // DBC.008a
-		Serial1.println(setup.wIndex);                      // DBC.008a
-		#endif                                       // DBC.008f
 		InitControl(setup.wLength);		//	Max length of transfer
 		ok = ClassInterfaceRequest(setup);
 	}
@@ -1167,16 +975,6 @@ void USBDevice_::attach()
 void USBDevice_::detach()
 {
 }
-
-bool USBDevice_::getCDCNeeded()  // DBC.008
-{                                // DBC.008
-	return _usbCDCNeeded;          // DBC.008
-}                                // DBC.008
-
-bool USBDevice_::setCDCNeeded(bool val)  // DBC.008
-{                                        // DBC.008
-	_usbCDCNeeded = val;                   // DBC.008
-}                                        // DBC.008
 
 //	Check for interrupts
 //	TODO: VBUS detection

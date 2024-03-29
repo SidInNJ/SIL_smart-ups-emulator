@@ -30,8 +30,6 @@
 
 #if defined(USBCON)
 
-#warning "TEMP COMPILE CONFIRM: desired HID.h is being compiled."
-
 #define _USING_HID
 
 // HID 'Driver'
@@ -68,7 +66,8 @@
 
 //#define HID_INTERFACE		(CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT)		// HID Interface  // DBC.008  CDC_ENABLED (0 + 2 = 2), CDC_DISABLED (0 + 0 = 0)
 #define HID_INTERFACE		0		// HID Interface                                            // DBC.008
-#define HID_FIRST_ENDPOINT	(CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT)
+#define HID_FIRST_ENDPOINT	(CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT)                  // DBC.009  CDC_ENABLED (1 + 3 = 4), CDC_DISABLED (1 + 0 = 1)
+//#define HID_FIRST_ENDPOINT	1                                                           // DBC.009  CDC_ENABLED (1 + 3 = 4), CDC_DISABLED (1 + 0 = 1)
 #define HID_ENDPOINT_INT	(HID_FIRST_ENDPOINT)
 #define HID_ENDPOINT_OUT	(HID_FIRST_ENDPOINT+1)   
 
