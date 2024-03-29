@@ -14,10 +14,25 @@
 #include <IPAddress.h>
 #include <EEPROM.h>     // for dumpEEProm()
 
+extern bool USBCDCNeeded;  // DBC.008b
+
 #ifdef CDC_ENABLED
-    #define SERIALPORT Serial   // Using USB Serial
+    //#define SERIALPORT Serial   // Using USB Serial
+    //#define SERIALPORT (USBCDCNeeded ? (Stream)Serial : (Stream)Serial1)   // Using USB Serial
+    #define SERIALPORT (USBCDCNeeded ? Serial : Serial1)   // Using USB Serial
+
+    #define SERIALPORT_Addr (USBCDCNeeded ? (Stream *)&Serial : (Stream *)&Serial1)
+    #define SERIALPORT_PRINTLN(args...) {if(USBCDCNeeded) Serial.println(args); else Serial1.println(args); }
+    #define SERIALPORT_PRINT(args...) {if(USBCDCNeeded) Serial.print(args); else Serial1.print(args); }
+    #define SERIALPORT_AVAILABLE() (USBCDCNeeded ? Serial.available() : Serial1.available())
+    #define SERIALPORT_READ() (USBCDCNeeded ? Serial.read() : Serial1.read())
+    #define SERIALPORT_WRITE(a) (USBCDCNeeded ? Serial.write(a) : Serial1.write(a))
+
 #else
     #define SERIALPORT Serial1  // Using pins 0/1 for Serial1 Rx/Tx
+    #define SERIALPORT_Addr (USBCDCNeeded ? (Stream *)&Serial : (Stream *)&Serial1)
+    #define SERIALPORT_PRINTLN(args...) {if(USBCDCNeeded) Serial.println(args); else Serial1.println(args); }
+    #define SERIALPORT_PRINT(args...) {if(USBCDCNeeded) Serial.print(args); else Serial1.print(args); }
 #endif
 
 // Common ASCII Chars
@@ -161,7 +176,7 @@ uint32_t disolveDot(uint32_t colorOld, uint32_t colorNew, uint16_t ratioNew256);
 uint32_t disolveColor(uint32_t colorOld, uint32_t colorNew, unsigned long startTime, unsigned long dissolveDuration = DUR_DONE_DEFAULT);
 uint16_t disolve16BitNum(uint32_t numOld, uint32_t numTarget, unsigned long startTime, unsigned long dissolveDuration); // Disolve (change the value) a 16 bit number over time (convert to 32bit on the way in)
 int check_mem(bool doPrint = true) ;     // Display how much memory is available (call after dynamically allocating memory)
-void dumpEEProm(Stream *serialPtr=&SERIALPORT);      // Show EEPROM contents. If captured to a file, the file may be written to the EEPROM of a new Arduino using EEPromRestore.ino and RealTerm https://realterm.sourceforge.io/
+void dumpEEProm(Stream *serialPtr=SERIALPORT_Addr);      // Show EEPROM contents. If captured to a file, the file may be written to the EEPROM of a new Arduino using EEPromRestore.ino and RealTerm https://realterm.sourceforge.io/
 int uint16Compare(const void *arg1, const void *arg2); // Use for qsort() comparisons of uint16_t's. ie. qsort(arOfEdges, numZones, sizeof(arOfEdges[0]), uint16Compare);
 bool isConfigEEPromMismatch(uint16_t addr, uint8_t *configPtr, uint16_t len);
 // Convert a linear lighting "curve" to a squared lighting curve
@@ -182,7 +197,7 @@ uint32_t Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t white = 0);
 
 class HandyHelpers {
 public: 
-    HandyHelpers(void) { m_serialPtr = &SERIALPORT; }
+    HandyHelpers(void) { m_serialPtr = SERIALPORT_Addr; }
 
     uint16_t anaFilter_Mid(uint8_t AnaInChan, uint8_t numSamples = 29); // 29 is good value for numSamples as it takes the time of a full-wave of AC power.
 
@@ -231,8 +246,8 @@ public:
     void printNumPadBlanks(uint16_t num, uint8_t numDigits);
     void printParsedBytes(uint8_t *byteArray, uint8_t numFields, char delim=',', uint8_t base=HEX);
     uint32_t reduceToMaxIntensity(uint32_t newColor, uint16_t maxIntensity);    // Reduce color values so sum does not exceed maxIntensity
-    void setSerialOutputStream(Stream *serialPtr = &SERIALPORT) {m_serialPtr = serialPtr;}
-    void resetSerialOutputStream(void) { m_serialPtr = &SERIALPORT; }
+    void setSerialOutputStream(Stream *serialPtr = SERIALPORT_Addr) {m_serialPtr = serialPtr;}
+    void resetSerialOutputStream(void) { m_serialPtr = SERIALPORT_Addr; }
     Stream* serPtr(void) { return m_serialPtr; }    // use as: MH.serPtr()->print(F("Hi"));
 
 private:

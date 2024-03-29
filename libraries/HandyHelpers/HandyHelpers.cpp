@@ -674,14 +674,14 @@ uint32_t HandyHelpers::reduceToMaxIntensity(uint32_t proposedColor, uint16_t max
     }
     else
     {
-        //SERIALPORT.print(F("Color not too bright. Sum: "));
-        //SERIALPORT.print(colorSum);
-        //SERIALPORT.print(F(", New Color:  "));
+        //SERIALPORT_PRINT(F("Color not too bright. Sum: "));
+        //SERIALPORT_PRINT(colorSum);
+        //SERIALPORT_PRINT(F(", New Color:  "));
         //MH.printParsedNumber(newColor);
-        //SERIALPORT.print(F(", R: ")); SERIALPORT.print(r);
-        //SERIALPORT.print(F(", G: ")); SERIALPORT.print(g);
-        //SERIALPORT.print(F(", B: ")); SERIALPORT.print(b);
-        //SERIALPORT.println();
+        //SERIALPORT_PRINT(F(", R: ")); SERIALPORT_PRINT(r);
+        //SERIALPORT_PRINT(F(", G: ")); SERIALPORT_PRINT(g);
+        //SERIALPORT_PRINT(F(", B: ")); SERIALPORT_PRINT(b);
+        //SERIALPORT_PRINTLN();
     }
     return newColor;
 }
@@ -712,7 +712,7 @@ uint32_t disolveDot(uint32_t colorOld, uint32_t colorNew, uint16_t ratioNew256)
     if (ratioNew256 > RESOLUTION_MULTI)
     {
         ratioNew256 = RESOLUTION_MULTI;
-        SERIALPORT.println(F("Programming Warning: ratioNew256 > 256."));
+        SERIALPORT_PRINTLN(F("Programming Warning: ratioNew256 > 256."));
     }
     unsigned long multOld = RESOLUTION_MULTI - ratioNew256;
     unsigned long multNew = ratioNew256;
@@ -828,12 +828,12 @@ int check_mem(bool doPrint)
     
         if (doPrint)
         {
-            SERIALPORT.print(F("\n Avail RAM: "));
-            SERIALPORT.print((long)(stackptr-heapptr));
-            SERIALPORT.print(F(", Stack="));
-            SERIALPORT.print((long)stackptr);
-            SERIALPORT.print(F(", Heap="));
-            SERIALPORT.println((long)heapptr);
+            SERIALPORT_PRINT(F("\n Avail RAM: "));
+            SERIALPORT_PRINT((long)(stackptr-heapptr));
+            SERIALPORT_PRINT(F(", Stack="));
+            SERIALPORT_PRINT((long)stackptr);
+            SERIALPORT_PRINT(F(", Heap="));
+            SERIALPORT_PRINTLN((long)heapptr);
         }
     
         return(int) ((long)(stackptr-heapptr));
@@ -955,17 +955,17 @@ void clearEEPromToFFs(void)
         delay(100);
     }
 
-    SERIALPORT.print(F("fillArraySize: "));
-    SERIALPORT.print(fillArraySize);
-    SERIALPORT.print(F(", EESize: "));
-    SERIALPORT.print(EEPROM_END_ADDR);
-    SERIALPORT.print(F(", fillArray[0]: "));
-    SERIALPORT.print(fillArray[0]);
-    SERIALPORT.print(F(", fillArray[1]: "));
-    SERIALPORT.print(fillArray[1]);
-    SERIALPORT.print(F(", EESize/fillArraySize: "));
-    SERIALPORT.print(EEPROM_END_ADDR/fillArraySize);
-    SERIALPORT.println();
+    SERIALPORT_PRINT(F("fillArraySize: "));
+    SERIALPORT_PRINT(fillArraySize);
+    SERIALPORT_PRINT(F(", EESize: "));
+    SERIALPORT_PRINT(EEPROM_END_ADDR);
+    SERIALPORT_PRINT(F(", fillArray[0]: "));
+    SERIALPORT_PRINT(fillArray[0]);
+    SERIALPORT_PRINT(F(", fillArray[1]: "));
+    SERIALPORT_PRINT(fillArray[1]);
+    SERIALPORT_PRINT(F(", EESize/fillArraySize: "));
+    SERIALPORT_PRINT(EEPROM_END_ADDR/fillArraySize);
+    SERIALPORT_PRINTLN();
 }
 
 
@@ -982,7 +982,7 @@ AverageRecent::AverageRecent(uint8_t listLen)         // Pass # of readings to a
     m_list = (uint16_t*) malloc((m_listLen+1) * sizeof(uint16_t));        
     if (m_list == NULL)
     {
-        SERIALPORT.println("PROGRAMMING ERROR: malloc() failed in AverageRecent(). Halting...");
+        SERIALPORT_PRINTLN("PROGRAMMING ERROR: malloc() failed in AverageRecent(). Halting...");
         while (true)
             ;
     }
@@ -1000,10 +1000,10 @@ AverageRecent::AverageRecent(uint8_t listLen)         // Pass # of readings to a
             readSum += range;
             readSum /= MAXREADS;
 
-            //SERIALPORT.print("Range: ");
-            //SERIALPORT.print(range);
-            //SERIALPORT.print(", Ave: ");
-            //SERIALPORT.println(readSum);
+            //SERIALPORT_PRINT("Range: ");
+            //SERIALPORT_PRINT(range);
+            //SERIALPORT_PRINT(", Ave: ");
+            //SERIALPORT_PRINTLN(readSum);
 */
 
 uint16_t AverageRecent::aveRecent(uint16_t lastRead)  // Pass most recent reading, returns ave of last few readings
@@ -1024,10 +1024,10 @@ uint16_t AverageRecent::aveRecent(uint16_t lastRead)  // Pass most recent readin
     readSum += lastRead;
     readSum /= m_listLenSoFar;
 
-    //SERIALPORT.print("Range: ");
-    //SERIALPORT.print(range);
-    //SERIALPORT.print(", Ave: ");
-    //SERIALPORT.println(readSum);
+    //SERIALPORT_PRINT("Range: ");
+    //SERIALPORT_PRINT(range);
+    //SERIALPORT_PRINT(", Ave: ");
+    //SERIALPORT_PRINTLN(readSum);
 
     return readSum; 
 }

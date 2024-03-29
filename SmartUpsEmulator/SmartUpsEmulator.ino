@@ -55,9 +55,9 @@ Todo:
 
 // Note: if CDC_ENABLED is defined, SERIALPORT is defined as Serial, otherwise as Serial1 (Pins 0/1)
 bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT.println(args);}
-#define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT.print(args);}
-#define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT.write(args);}
+#define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT_PRINTLN(args);}
+#define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT_PRINT(args);}
+#define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT_WRITE(args);}
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -163,9 +163,9 @@ EEPROM_Struct StoreEE;
 void handleLaptopInput(void);
 void printHelp(void);
 void watchDogReset(void);
-void printHelp(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
-void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
-void showPersistentSettings(Stream *serialPtr = &SERIALPORT, bool handleUsbOnlyOptions = true);
+void printHelp(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
+void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
+void showPersistentSettings(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
 void enableDebugPrints(uint8_t debugPrBits);
 #define DBG_PRINT_MAIN      0    // 0x01
 
@@ -184,8 +184,8 @@ Status_HID_Comm status_HID = stat_Disabled;
 #define BLINKON_ERROR  100
 #define BLINKOFF_ERROR 900
 
-//Stream *serPtr = &SERIALPORT;  // DBC.007
-Stream *serPtr = &SERIALPORT;
+//Stream *serPtr = SERIALPORT_Addr;  // DBC.007
+Stream *serPtr = SERIALPORT_Addr;
 int batVoltage = 1300;
 
 Timer_ms statusLedTimerOn;
@@ -258,8 +258,18 @@ void setup(void)
 
     // Used for debugging purposes.
 #ifdef CDC_ENABLED
-    PowerDevice.setOutput(SERIALPORT);
+    PowerDevice.setOutput(Serial);
 #endif
+//#ifdef CDC_ENABLED
+//    if (USBCDCNeeded)
+//    {
+//        PowerDevice.setOutput(Serial);
+//    }
+//    else
+//    {
+//        PowerDevice.setOutput(Serial1);
+//    }
+//#endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
     pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
@@ -479,8 +489,8 @@ void loop(void)
         doDebugPrints = true;
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
-        SERIALPORT.print("BatV*100: ");  // DBC.008
-        SERIALPORT.println(batVoltage);  // DBC.008
+        SERIALPORT_PRINT("BatV*100: ");  // DBC.008
+        SERIALPORT_PRINTLN(batVoltage);  // DBC.008
         #ifdef SERIAL1_DEBUG                         // DBC.008f   
         Serial1.print("USBCDCNeeded: ");  // DBC.008b
         Serial1.print(USBCDCNeeded);      // DBC.008b
@@ -532,12 +542,12 @@ void handleLaptopInput(void)
     static uint8_t indexUserIn = 0;
     int inByte;
 
-    while (SERIALPORT.available())     // DBC.007
+    while (SERIALPORT_AVAILABLE())     // DBC.007
     {
-        inByte = SERIALPORT.read();    // DBC.007
+        inByte = SERIALPORT_READ();    // DBC.007
         if (doDebugPrints)
         {
-            SERIALPORT.write(inByte);  // DBC.007
+            SERIALPORT_WRITE(inByte);  // DBC.007
         }
         //if (inByte == ASCII_CR)
         //{
@@ -559,7 +569,7 @@ void handleLaptopInput(void)
             if (indexUserIn)    // Skip only CR or LF without a real string
             {
                 //processUserInput(userIn, indexUserIn, inByte);                // DBC.007
-                processUserInput(userIn, indexUserIn, inByte, &SERIALPORT, true);  // DBC.007
+                processUserInput(userIn, indexUserIn, inByte, SERIALPORT_Addr, true);  // DBC.007
             }
         } //end if (indexUserIn<MAX_MENU_CHARS)
         else
@@ -573,7 +583,7 @@ void handleLaptopInput(void)
         {
             DBPRINT("\nCmd: ");
         }
-    } // end if (SERIALPORT.available())
+    } // end while (SERIALPORT_AVAILABLE())
 
 }
 
