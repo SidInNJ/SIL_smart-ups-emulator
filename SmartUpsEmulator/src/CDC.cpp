@@ -26,7 +26,7 @@
 
 #ifndef CDC_ENABLED
 
-#warning "! Disabled serial console via USB (CDC)!"
+#warning "! Disabled serial console via USB (CDC_ENABLED not Defined)!"
 #warning "! With this change you'll have to use the Arduino's reset button/pin to flash (upload)!"
 
 #else // CDC not disabled

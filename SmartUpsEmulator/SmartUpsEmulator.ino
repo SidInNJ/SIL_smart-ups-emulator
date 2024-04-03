@@ -252,7 +252,7 @@ void setup(void)
 
     // Used for debugging purposes.
 #ifdef CDC_ENABLED
-    PowerDevice.setOutput(Serial);
+    PowerDevice.setOutput(SERIALPORT_Addr);
 #endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
@@ -475,7 +475,7 @@ void loop(void)
         doDebugPrints = true;
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
-        SERIALPORT_PRINT("BatV*100: ");  // DBC.008
+        SERIALPORT_PRINT("BatV*100:: ");  // DBC.008
         SERIALPORT_PRINTLN(batVoltage);  // DBC.008
 
         SERIALPORT_PRINTLN(USBDebug);                   // DBC.009
