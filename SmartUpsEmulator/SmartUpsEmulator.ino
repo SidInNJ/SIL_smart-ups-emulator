@@ -20,7 +20,8 @@
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
 
-#define MINUPDATEINTERVAL   26
+//#define MINUPDATEINTERVAL   26
+#define MINUPDATEINTERVAL   10
 
 int iIntTimer = 0;
 
@@ -193,18 +194,18 @@ extern char USBDebug[512];     // DBC.009
 void setup(void)
 {
 
-#ifdef CDC_ENABLED
-    Serial.begin(115200);
-    delay(5000);
-    Serial.print(F("USB Serial baud, bits, parity, stop bits: "));
-    Serial.print(Serial.baud());
-    Serial.print(F(", "));
-    Serial.print(Serial.numbits());
-    Serial.print(F(", "));
-    Serial.print(Serial.paritytype());
-    Serial.print(F(", "));
-    Serial.println(Serial.stopbits());
-#endif
+//#ifdef CDC_ENABLED
+//    Serial.begin(115200);
+//    delay(5000);
+//    Serial.print(F("USB Serial baud, bits, parity, stop bits: "));
+//    Serial.print(Serial.baud());
+//    Serial.print(F(", "));
+//    Serial.print(Serial.numbits());
+//    Serial.print(F(", "));
+//    Serial.print(Serial.paritytype());
+//    Serial.print(F(", "));
+//    Serial.println(Serial.stopbits());
+//#endif
 
 // #ifdef CDC_DISABLED
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
@@ -252,7 +253,7 @@ void setup(void)
 
     // Used for debugging purposes.
 #ifdef CDC_ENABLED
-    PowerDevice.setOutput(SERIALPORT_Addr);
+    PowerDevice.setOutput(Serial);      // Don't think this get used, but sounds like it should be for debug prints, maybe. SLR DOYET
 #endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
@@ -324,6 +325,9 @@ void loop(void)
 
     if (timeToUpdate.StartIfStopped(1000))
     {
+
+        iIntTimer += 1;     // Send report to PC every few seconds, change or not.
+
         //*********** Measurements Unit ****************************
         bool bCharging = digitalRead(PIN_INPUT_PWR_FAIL);
         //bool bForceShutdown = digitalRead(6) ? false : true;  // Sid added for temperary test
@@ -431,7 +435,9 @@ void loop(void)
                     PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
                     if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
                     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-                    DBPRINTLN("Sent bat status to PC");
+                    //DBPRINTLN("Sent bat status to PC");
+                    SERIALPORT_PRINT("Sent bat status to PC, Result=");
+                    SERIALPORT_PRINTLN(iRes);
 
                 //}
 

@@ -411,7 +411,8 @@ void InitDevDescrip() // Initialize Device Descriptor                           
 		USB_DeviceDescriptorIAD = D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a
 	}                                                                                                                 // DBC.009a
 	else {                                                                                                            // DBC.009a
-		USB_DeviceDescriptorIAD = D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a
+		//USB_DeviceDescriptorIAD = D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a
+		USB_DeviceDescriptorIAD = D_DEVICE(0x00,0x00,0x00,64,USB_UPS_VID,USB_UPS_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a  SLR per above Davis Suggestion 2024-04-03
 	}                                                                                                                 // DBC.009a
 }                                                                                  // DBC.008a
 #endif
