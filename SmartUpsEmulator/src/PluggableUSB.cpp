@@ -93,7 +93,14 @@ bool PluggableUSB_::plug(PluggableUSBModule *node)
 
 	pinMode(2,INPUT_PULLUP);                             // DBC.008d  Switch, Press for CDC, Green LED
   if (USBCDCNeeded || (digitalRead(2) == LOW)) {       // DBC.008d  Switch is pressed. Not sure why the switch needs to be read here. Errors without it
-		node->pluggedInterface = CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT;    // DBC.008b 0 + 2 = 2
+
+      if (!USBCDCNeeded)                                                        // SLR 2024-04-19   
+      {
+          Serial1.println("USBCDCNeeded NOT set before PluggableUSB_::plug");   // SLR 2024-04-19
+          USBCDCNeeded = true;                                                  // SLR 2024-04-19   
+      }
+
+        node->pluggedInterface = CDC_ACM_INTERFACE + CDC_INTERFACE_COUNT;    // DBC.008b 0 + 2 = 2
 		node->pluggedEndpoint = CDC_FIRST_ENDPOINT + CDC_ENPOINT_COUNT;      // DBC.008b 1 + 3 = 4
 	}
 	else                                                 // DBC.008b

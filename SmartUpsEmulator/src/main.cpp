@@ -30,7 +30,9 @@ void initVariant() { }
 void setupUSB() __attribute__((weak));
 void setupUSB() { }
 
-volatile bool USBCDCNeeded = false;      // DBC.008b
+//volatile bool USBCDCNeeded = false;      // DBC.008b
+bool USBCDCNeeded = false;      // DBC.008b				SLR - Match the other def's
+
 volatile char USBDebug[512] = {0};       // DBC.009
 
 void readSwitch() {                                // DBC.009

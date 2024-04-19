@@ -53,6 +53,12 @@ bool doDebugPrints = true;  // Enable printing by default
 #define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT_PRINTLN(args);}
 #define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT_PRINT(args);}
 #define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT_WRITE(args);}
+#ifdef CDC_DISABLED
+bool doDebugPrints = true;  // Enable printing by default
+#define DBPRINTLN(args...) if(doDebugPrints) { Serial1.println(args);} 
+#define DBPRINT(args...)   if(doDebugPrints) { Serial1.print(args);}   
+#define DBWRITE(args...)   if(doDebugPrints) { Serial1.write(args);}   
+#endif
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -100,6 +106,12 @@ int iRes = 0;
 #define PIN_LED_STATUS          13
 #define PIN_BATTERY_VOLTAGE     A5
 #define PIN_INPUT_PWR_FAIL       4  // Short to ground to indicate loss of AC power / running on battery
+
+#define PIN_USBCDCNEEDED    2  // Used in main.cpp
+#define PIN_LED_YELLOW      5  // Used in main.cpp
+#define PIN_LED_BLUE        6  // Used in main.cpp
+#define PIN_LED_GREEN       7  // Used in main.cpp
+#define PIN_LOGIC_TRIG      8  // Trigger logic analyzer when battery info sent to Host
 
 struct CalibPoint
 {
@@ -193,41 +205,9 @@ extern char USBDebug[512];     // DBC.009
 
 void setup(void)
 {
-
-//#ifdef CDC_ENABLED
-//    Serial.begin(115200);
-//    delay(5000);
-//    Serial.print(F("USB Serial baud, bits, parity, stop bits: "));
-//    Serial.print(Serial.baud());
-//    Serial.print(F(", "));
-//    Serial.print(Serial.numbits());
-//    Serial.print(F(", "));
-//    Serial.print(Serial.paritytype());
-//    Serial.print(F(", "));
-//    Serial.println(Serial.stopbits());
-//#endif
-
-// #ifdef CDC_DISABLED
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
     while (!Serial1);
-    delay(1000);
-// #endif
 
-
-    DBPRINTLN();
-    DBPRINTLN(F(PROG_NAME_VERSION));
-    DBPRINTLN(F(__FILE__));               // Print name of the source file
-    DBPRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
-    DBPRINTLN("Starting...\n\r");
-
-    //Serial1.begin(115200);
-    //while (!Serial1);
-    //delay(1000);
-    //Serial1.print("Starting...\n\r");
-
-    // Davis, do we want to always send this to Serial1, CDC_ENABLED or not?
-    Serial1.print("USBCDCNeeded: ");  // DBC.008b
-    Serial1.println(USBCDCNeeded);    // DBC.008b
 
     // New for GTIS
     EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
@@ -235,30 +215,27 @@ void setup(void)
     if ((StoreEE.eeValid_1 == EEPROM_VALID_PAT1) && (StoreEE.eeValid_2 == EEPROM_VALID_PAT2) && (StoreEE.eeVersion == EEPROM_END_VER_SIG)) // Signature Valid?
     {
         enableDebugPrints(StoreEE.debugFlags);
-        DBPRINTLN(F("Good: EEPROM is initialized."));
+        if(!USBCDCNeeded)
+            Serial1.println(F("Good: EEPROM is initialized."));
     }
     else
     {
-        DBPRINTLN(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
+        if(!USBCDCNeeded)
+            Serial1.println(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
         FactoryDefault();
     }
 
-
     // Init Watchdog DOYET
 
-    PowerDevice.begin();
-
-    // Serial No is set in a special way as it forms Arduino port name
-    PowerDevice.setSerial(STRING_SERIAL);
-
-    // Used for debugging purposes.
-#ifdef CDC_ENABLED
-    PowerDevice.setOutput(Serial);      // Don't think this get used, but sounds like it should be for debug prints, maybe. SLR DOYET
-#endif
+    // Serial Startup was here, but will do after we have some USB setup done. Otherwise the USB may get started
+    //  and run with needed things uninitialized.
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
     pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
     digitalWrite(PIN_LED_STATUS, HIGH); // Flash with different patterns to show HID comm status
+
+    pinMode(PIN_LOGIC_TRIG, OUTPUT);    // Trigger logic analyzer
+    digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig on low going edge, high for now
 
     //pinMode(6, INPUT_PULLUP); // ground this pin to send only the shutdown command without changing bat charge // Sid added for temperary test
     //pinMode(5, OUTPUT);  // output flushing 1 sec indicating that the arduino cycle is running.
@@ -299,19 +276,53 @@ void setup(void)
 
     batVoltage = StoreEE.batFullVoltage;
 
-    if (true)
-    {
-        bool bCharging = true;
-        bool bDischarging = !bCharging; // TODO - replace with sensor
+    PowerDevice.begin();
 
-        // Send initial report with everything looking good, update in main loop
-        PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
-        if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
-        iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-        DBPRINTLN("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
+    // Serial No is set in a special way as it forms Arduino port name
+    PowerDevice.setSerial(STRING_SERIAL);
+
+    // Serial Starup Starts here
+    Serial.begin(57600);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
+    while (!Serial)
+        ;
+
+
+    // Used for debugging purposes.
+#ifdef CDC_ENABLED
+    PowerDevice.setOutput(Serial);      // Don't think this get used, but sounds like it should be for debug prints, maybe. SLR DOYET
+#endif
+    // Serial Starup End
+
+    Serial1.print("USBCDCNeeded: ");  // DBC.008b
+    Serial1.println(USBCDCNeeded);    // DBC.008b
+
+    // Initially say all is well and avoid PC shutdown on first plug-in.
+    bool bCharging = true;
+    bool bDischarging = !bCharging; // TODO - replace with sensor
+    //
+    // Send initial report with everything looking good, update in main loop
+    int iRes0 = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
+    delay(1000);
+    if (bDischarging)
+    {
+        PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
+        delay(1000);
     }
+    iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+    Serial1.print("Initial capacity to PC, Result = ");
+    Serial1.print(iRes0);
+    Serial1.print(", status to PC, Result = ");
+    Serial1.println(iRes);
+    Serial1.println("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
 
     statusLedTimerOn.Start(10);
+
+    Serial1.println(F(PROG_NAME_VERSION));
+    Serial1.println(F(__FILE__));               // Print name of the source file
+    Serial1.println("\nCompiled at: " __DATE__ ", " __TIME__);
+    Serial1.println("Starting....\n\r");
+
+    delay(2000);
 }
 
 
@@ -429,6 +440,8 @@ void loop(void)
                )
             {
 
+                digitalWrite(PIN_LOGIC_TRIG, LOW); //  Trig on low going edge
+
                 //if (false)
                 //if (StoreEE.msgPcEnabled)
                 //{
@@ -436,10 +449,24 @@ void loop(void)
                     if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
                     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
                     //DBPRINTLN("Sent bat status to PC");
-                    SERIALPORT_PRINT("Sent bat status to PC, Result=");
-                    SERIALPORT_PRINTLN(iRes);
+                    SERIALPORT_PRINT("Sent bat status to PC, Result = ");
+                    SERIALPORT_PRINT(iRes);
+                    SERIALPORT_PRINT(", Remaining = ");
+                    SERIALPORT_PRINT(iRemaining);
+                    SERIALPORT_PRINT(", Status = 0x");
+                    SERIALPORT_PRINT(iPresentStatus, HEX);
+                    SERIALPORT_PRINT(", Discharging: ");
+                    SERIALPORT_PRINTLN(bDischarging ? "Y" : "N");
 
+                    DBPRINT("To Empty mm:ss ");
+                    DBPRINT(iRunTimeToEmpty / 60);
+                    DBPRINT(":");
+                    DBPRINT(iRunTimeToEmpty % 60);
+                    DBPRINT(", Comm with PC (negative=bad): ");
+                    DBPRINT(iRes);
+                    DBPRINT(", ");
                 //}
+                digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig'd on low going edge, back to high 
 
                 // DOYET: attache LED to pint 10
                 //if (iRes < 0)
@@ -466,18 +493,7 @@ void loop(void)
             status_HID = stat_Disabled;
         }
 
-        if (StoreEE.msgPcEnabled)
-        {
-            DBPRINT("Remaining: ");
-            DBPRINT(iRemaining);
-            DBPRINT(", To Empty mm:ss ");
-            DBPRINT(iRunTimeToEmpty / 60);
-            DBPRINT(":");
-            DBPRINT(iRunTimeToEmpty % 60);
-            DBPRINT(", Comm with PC (negative=bad): ");
-            DBPRINT(iRes);
-            DBPRINT(", ");
-        }
+
         doDebugPrints = true;
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
@@ -816,7 +832,7 @@ void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
 void FactoryDefault(void)
 {
     //StoreEE.debugFlags        =  0;  // No debug prints by default  // DBC.007
-    StoreEE.debugFlags        =  1;  // Debug prints by default       // DBC.007
+    StoreEE.debugFlags        =  0;  // Debug prints by default       // DBC.007
     StoreEE.eeValid_1         = EEPROM_VALID_PAT1;      // Set sig in case user stores config to EEPROM.
 
     StoreEE.eeValid_2         = EEPROM_VALID_PAT2;
@@ -828,19 +844,20 @@ void FactoryDefault(void)
     StoreEE.iAvgTimeToEmpty  = 120*60;
     StoreEE.iRemainTimeLimit =  10*60;
     StoreEE.batFullVoltage   = 1380;   // Voltage in hundredths, Bat Full
-    StoreEE.batEmptyVoltage  = 1150;   // Voltage in hundredths, Bat Empty
+    //StoreEE.batEmptyVoltage  = 1150;   // Voltage in hundredths, Bat Empty
+    StoreEE.batEmptyVoltage  = 1000;   // Voltage in hundredths, Bat Empty       DOYET DEBUG
 
     StoreEE.calibPointLow.voltage   = 0;
     StoreEE.calibPointLow.a2dValue  = 0;
     StoreEE.calibPointHigh.voltage  = 1400;
-    StoreEE.calibPointHigh.a2dValue = 100;  // This will definetely need to be calibrated!
+    StoreEE.calibPointHigh.a2dValue = 1023;  // This will definetely need to be calibrated!
 
     // Parameters for ACPI compliancy
     StoreEE.iWarnCapacityLimit = 10; // warning at 10%
     StoreEE.iRemnCapacityLimit = 5; // low at 5%
     StoreEE.msgPcEnabled = false;
 
-    DBPRINTLN(F("Restored factory defaults."));
+    //DBPRINTLN(F("Restored factory defaults."));       // DOYET PUT BACK
 }
 
 

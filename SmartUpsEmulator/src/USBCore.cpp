@@ -73,14 +73,16 @@ const u8 STRING_MANUFACTURER[] PROGMEM = USB_MANUFACTURER;
 
 #ifdef CDC_ENABLED
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
-	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
+	//D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
+    D_DEVICE(0x00,0x00,0x00,64,USB_UPS_VID,USB_UPS_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a  SLR Make similiar to final
 #else // CDC_DISABLED
 // The default descriptor uses USB class OxEF, subclass 0x02 with protocol 1
 // which means "Interface Association Descriptor" - that's needed for the CDC,
 // but doesn't make much sense as a default for custom devices when CDC is disabled.
 // (0x00 means "Use class information in the Interface Descriptors" which should be generally ok)
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
-	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
+	//D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
+    D_DEVICE(0x00,0x00,0x00,64,USB_UPS_VID,USB_UPS_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a  SLR Make similiar to final
 #endif
 
 //==================================================================
@@ -367,8 +369,15 @@ void InitDevDescrip() // Initialize Device Descriptor                           
 	USB_DeviceDescriptorIAD.usbVersion = USB_VERSION;                                // DBC.008a
 	//if (!USBDevice.getCDCNeeded()) {                      // Serial port disabled    // DBC.008a
   //if (digitalRead(2) == LOW) {                                                       // DBC.008b Switch is pressed
-  //if (USBCDCNeeded || (digitalRead(2) == LOW)) {                                  // DBC.008d Switch is pressed
-  if (USBCDCNeeded) {                                  // DBC.008d Switch is pressed                 // Davis - Device descriptor is wrong for CDC_DISABLED
+  if (USBCDCNeeded || (digitalRead(2) == LOW)) {                                  // DBC.008d Switch is pressed
+  //if (USBCDCNeeded) {                                  // DBC.008d Switch is pressed                 // Davis - Device descriptor is wrong for CDC_DISABLED
+
+      if (!USBCDCNeeded)                                                        // SLR 2024-04-19
+      {
+          Serial1.println("USBCDCNeeded NOT set before InitDevDescrip()");   // SLR 2024-04-19
+          USBCDCNeeded = true;                                                 // SLR 2024-04-19
+      }
+
 		//USBCDCNeeded = true;                                                          // DBC.008d
 		//USB_DeviceDescriptorIAD.deviceClass = 0x00;                                    // DBC.008a
 		//USB_DeviceDescriptorIAD.deviceSubClass = 0x00;                                 // DBC.008a
@@ -383,16 +392,16 @@ void InitDevDescrip() // Initialize Device Descriptor                           
 		//USB_DeviceDescriptorIAD.deviceClass = 0xEF;                                    // DBC.008a
 		//USB_DeviceDescriptorIAD.deviceSubClass = 0x02;                                 // DBC.008a
 		//USB_DeviceDescriptorIAD.deviceProtocol = 0x01;                                 // DBC.008a
-		USB_DeviceDescriptorIAD.deviceClass = 0x00;                                    // DBC.008b
-		USB_DeviceDescriptorIAD.deviceSubClass = 0x00;                                 // DBC.008b
-		USB_DeviceDescriptorIAD.deviceProtocol = 0x00;                                 // DBC.008b
+            USB_DeviceDescriptorIAD.deviceClass = 0x00;                                    // DBC.008b
+            USB_DeviceDescriptorIAD.deviceSubClass = 0x00;                                 // DBC.008b
+            USB_DeviceDescriptorIAD.deviceProtocol = 0x00;                                 // DBC.008b
 		USBSwitchTime[0] = -millis();                                                  // DBC.008c
 		USBSwitchCount[0]++;                                                           // DBC.008d
 	}                                                                                // DBC.008a
 	USB_DeviceDescriptorIAD.packetSize0 = 64;                                        // DBC.008a
 	USB_DeviceDescriptorIAD.idVendor = USB_VID;                                      // DBC.008a
 	USB_DeviceDescriptorIAD.idProduct = USB_PID;                                     // DBC.008a
-    if (!USBCDCNeeded) {                                                          // DBC.009b   (Sid inserted per Davis suggestion)
+    if (!USBCDCNeeded) {                                                          // DBC.009b   (Sid inserted per Davis suggestion) 
          USB_DeviceDescriptorIAD.idVendor = USB_UPS_VID;                          // DBC.009b
          USB_DeviceDescriptorIAD.idProduct = USB_UPS_PID;                         // DBC.009b
     }          

@@ -272,7 +272,7 @@ bool HID_::setup(USBSetup& setup)
 	return false;
 }
 
-extern bool USBCDCNeeded;  // DBC.008b
+//extern bool USBCDCNeeded;  // DBC.008b    // Not needed, def'd above
 
 HID_::HID_(void) : PluggableUSBModule(2, 1, epType),
                    rootNode(NULL), descriptorSize(0),
