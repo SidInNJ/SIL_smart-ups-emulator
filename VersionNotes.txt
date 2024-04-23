@@ -1,0 +1,7 @@
+CDC disabled updates battery status on a Win10 PC.
+The CDC enabled mode puts my PC to sleep when 
+first started if the "battery" is at 91%.
+Many other features still lacking:
+Configuration, 
+Charge/Discharge determination,
+Battery type and voltage (12/24/48)

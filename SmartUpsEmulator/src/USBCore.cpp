@@ -482,23 +482,25 @@ void InitEndpoints()
 	UERST = 0;
 }
 
-//	Handle CLASS_INTERFACE requests
+// Handle CLASS_INTERFACE requests
 static
 bool ClassInterfaceRequest(USBSetup& setup)
 {
 #ifdef CDC_ENABLED
-	u8 i = setup.wIndex;
+if (USBCDCNeeded) {                                             // DBC.009c Switch is pressed
+  u8 i = setup.wIndex;
 
-	if (CDC_ACM_INTERFACE == i)
-	{                                                             // DBC.008b
-		return CDC_Setup(setup);
-	}                                                             // DBC.008b
+  if (CDC_ACM_INTERFACE == i)
+  {                                                             // DBC.008b
+    return CDC_Setup(setup);
+  }                                                             // DBC.008b
+}                                                               // DBC.009c
 #endif
 
 #ifdef PLUGGABLE_USB_ENABLED
-	return PluggableUSB().setup(setup);
+    return PluggableUSB().setup(setup);
 #endif
-	return false;
+return false;
 }
 
 static int _cmark;

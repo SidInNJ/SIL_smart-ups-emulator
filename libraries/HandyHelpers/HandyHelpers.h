@@ -14,20 +14,17 @@
 #include <IPAddress.h>
 #include <EEPROM.h>     // for dumpEEProm()
 
-extern bool USBCDCNeeded;  // 
+extern bool USBCDCNeeded;           // Set in main()
+extern bool SerialIsInitialized;    // Set in SmartUpsEmulator.ino
 
 #ifdef CDC_ENABLED
-    //#define SERIALPORT Serial   // Using USB Serial
-    //#define SERIALPORT (USBCDCNeeded ? (Stream)Serial : (Stream)Serial1)   // Using USB Serial
-    #define SERIALPORT (USBCDCNeeded ? Serial : Serial1)   // Using USB Serial
-
-    #define SERIALPORT_Addr (USBCDCNeeded ? (Stream *)&Serial : (Stream *)&Serial1)
-    #define SERIALPORT_PRINTLN(args...) {if(USBCDCNeeded) Serial.println(args); else Serial1.println(args); }
-    #define SERIALPORT_PRINT(args...) {if(USBCDCNeeded) Serial.print(args); else Serial1.print(args); }
-    #define SERIALPORT_AVAILABLE() (USBCDCNeeded ? Serial.available() : Serial1.available())
-    #define SERIALPORT_READ() (USBCDCNeeded ? Serial.read() : Serial1.read())
-    #define SERIALPORT_WRITE(a) (USBCDCNeeded ? Serial.write(a) : Serial1.write(a))
-
+    #define SERIALPORT ((USBCDCNeeded && SerialIsInitialized) ? Serial : Serial1)   // Using USB Serial
+    #define SERIALPORT_Addr ((USBCDCNeeded && SerialIsInitialized) ? (Stream *)&Serial : (Stream *)&Serial1)
+    #define SERIALPORT_PRINTLN(args...) {if(USBCDCNeeded && SerialIsInitialized) Serial.println(args); else Serial1.println(args); }
+    #define SERIALPORT_PRINT(args...) {if(USBCDCNeeded && SerialIsInitialized) Serial.print(args); else Serial1.print(args); }
+    #define SERIALPORT_AVAILABLE() ((USBCDCNeeded && SerialIsInitialized) ? Serial.available() : Serial1.available())
+    #define SERIALPORT_READ() ((USBCDCNeeded && SerialIsInitialized) ? Serial.read() : Serial1.read())
+    #define SERIALPORT_WRITE(a) ((USBCDCNeeded && SerialIsInitialized) ? Serial.write(a) : Serial1.write(a))
 #else
     #define SERIALPORT Serial1  // Using pins 0/1 for Serial1 Rx/Tx
     #define SERIALPORT_Addr             (Stream *)&Serial1)

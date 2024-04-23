@@ -24,6 +24,11 @@ HandyHelpers MH; // My Handy Helper
 #define MINUPDATEINTERVAL   10
 
 int iIntTimer = 0;
+bool SerialIsInitialized = false;
+
+#define SEND_INITIAL_RPT false      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
+#define SEND_UPDATE_RPTS false
+
 
 /*
  For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
@@ -49,15 +54,16 @@ Todo:
 */
 
 // Note: if CDC_ENABLED is defined, SERIALPORT is defined as Serial, otherwise as Serial1 (Pins 0/1)
-bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT_PRINTLN(args);}
-#define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT_PRINT(args);}
-#define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT_WRITE(args);}
-#ifdef CDC_DISABLED
-bool doDebugPrints = true;  // Enable printing by default
-#define DBPRINTLN(args...) if(doDebugPrints) { Serial1.println(args);} 
-#define DBPRINT(args...)   if(doDebugPrints) { Serial1.print(args);}   
-#define DBWRITE(args...)   if(doDebugPrints) { Serial1.write(args);}   
+#ifdef CDC_ENABLED
+    bool doDebugPrints = true;  // Enable printing by default
+    #define DBPRINTLN(args...) if(doDebugPrints) { SERIALPORT_PRINTLN(args);}
+    #define DBPRINT(args...)   if(doDebugPrints) { SERIALPORT_PRINT(args);}
+    #define DBWRITE(args...)   if(doDebugPrints) { SERIALPORT_WRITE(args);}
+#else
+    bool doDebugPrints = true;  // Enable printing by default
+    #define DBPRINTLN(args...) if(doDebugPrints) { Serial1.println(args);} 
+    #define DBPRINT(args...)   if(doDebugPrints) { Serial1.print(args);}   
+    #define DBWRITE(args...)   if(doDebugPrints) { Serial1.write(args);}   
 #endif
 
 // String constants
@@ -89,6 +95,9 @@ const byte iDesignCapacity = 100;
 const byte bCapacityGranularity1 = 1;
 const byte bCapacityGranularity2 = 1;
 byte iFullChargeCapacity = 100;
+bool bCharging    = true; 
+bool bACPresent   = true; 
+bool bDischarging = false; 
 
 byte iRemaining = 100, iPrevRemaining = 0;
 
@@ -206,8 +215,8 @@ extern char USBDebug[512];     // DBC.009
 void setup(void)
 {
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
-    while (!Serial1);
-
+    while (!Serial1)
+        delay(10);
 
     // New for GTIS
     EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
@@ -229,6 +238,16 @@ void setup(void)
 
     // Serial Startup was here, but will do after we have some USB setup done. Otherwise the USB may get started
     //  and run with needed things uninitialized.
+    PowerDevice.begin();
+
+    // Serial No is set in a special way as it forms Arduino port name
+    PowerDevice.setSerial(STRING_SERIAL);
+
+//    // Used for debugging purposes.
+#ifdef CDC_ENABLED
+    if(USBCDCNeeded)
+        PowerDevice.setOutput(Serial);      // Don't think this get used, but sounds like it should be for debug prints, maybe. SLR DOYET
+#endif
 
     pinMode(PIN_INPUT_PWR_FAIL, INPUT_PULLUP); // ground this pin to simulate power failure.
     pinMode(PIN_BATTERY_VOLTAGE, INPUT); // Battery input (needs a voltage divider)
@@ -246,6 +265,13 @@ void setup(void)
     bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
     bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
     bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+
+    bCharging = digitalRead(PIN_INPUT_PWR_FAIL);             
+    bACPresent = bCharging;    // TODO - replace with sensor 
+    bDischarging = !bCharging; // TODO - replace with sensor     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+
+    // Read battery, calc % charge, time remaining, status bits to set/clear
+    UpdateBatteryStatus(bCharging, bACPresent, bDischarging);
 
     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
 
@@ -276,31 +302,29 @@ void setup(void)
 
     batVoltage = StoreEE.batFullVoltage;
 
-    PowerDevice.begin();
-
-    // Serial No is set in a special way as it forms Arduino port name
-    PowerDevice.setSerial(STRING_SERIAL);
-
-    // Serial Starup Starts here
-    Serial.begin(57600);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
-    while (!Serial)
-        ;
-
-
-    // Used for debugging purposes.
 #ifdef CDC_ENABLED
-    PowerDevice.setOutput(Serial);      // Don't think this get used, but sounds like it should be for debug prints, maybe. SLR DOYET
+    if (USBCDCNeeded)
+    {
+        Serial.begin(57600);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
+        while (!Serial)
+            delay(10);
+        SerialIsInitialized = true;
+        Serial.print("USBCDCNeeded: ");  // DBC.008b
+        Serial.println(USBCDCNeeded);    // DBC.008b
+    }
 #endif
-    // Serial Starup End
 
     Serial1.print("USBCDCNeeded: ");  // DBC.008b
     Serial1.println(USBCDCNeeded);    // DBC.008b
+
+    Serial1.flush();
 
     // Initially say all is well and avoid PC shutdown on first plug-in.
     bool bCharging = true;
     bool bDischarging = !bCharging; // TODO - replace with sensor
     //
-    // Send initial report with everything looking good, update in main loop
+    // Send initial report with everything looking good, update in main loop4
+#if SEND_INITIAL_RPT
     int iRes0 = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
     delay(1000);
     if (bDischarging)
@@ -309,24 +333,97 @@ void setup(void)
         delay(1000);
     }
     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-    Serial1.print("Initial capacity to PC, Result = ");
-    Serial1.print(iRes0);
-    Serial1.print(", status to PC, Result = ");
-    Serial1.println(iRes);
-    Serial1.println("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
+    SERIALPORT_PRINT("Initial capacity to PC, Result = ");
+    SERIALPORT_PRINT(iRes0);
+    SERIALPORT_PRINT(", status to PC, Result = ");
+    SERIALPORT_PRINTLN(iRes);
+    SERIALPORT_PRINTLN("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
 
-    statusLedTimerOn.Start(10);
-
-    Serial1.println(F(PROG_NAME_VERSION));
-    Serial1.println(F(__FILE__));               // Print name of the source file
-    Serial1.println("\nCompiled at: " __DATE__ ", " __TIME__);
-    Serial1.println("Starting....\n\r");
+    SERIALPORT_PRINTLN(F(PROG_NAME_VERSION));
+    SERIALPORT_PRINTLN(F(__FILE__));               // Print name of the source file
+    SERIALPORT_PRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
+    SERIALPORT_PRINTLN("Starting....\n\r");
+#endif // SEND_INITIAL_RPT
 
     delay(2000);
+
+    statusLedTimerOn.Start(10);
 }
 
 
 Timer_ms timeToUpdate;
+
+
+void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
+{
+    int iA7 = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
+
+    //if (true)
+    //{
+    batVoltage = map(iA7, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
+    if (batVoltage < 0) batVoltage = 0;
+
+    int iRemainingInt = map(batVoltage, StoreEE.batEmptyVoltage, StoreEE.batFullVoltage, 0, 100);
+    iRemaining = constrain(iRemainingInt, 0, 100);
+    //}
+    //else
+    //{
+    //    iRemaining = (byte)(round((float)100 * iA7 / 1024));
+    //}
+
+    iRunTimeToEmpty = (uint16_t)round((float)StoreEE.iAvgTimeToEmpty * iRemaining / 100);
+
+    // Charging
+    if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
+    else bitClear(iPresentStatus, PRESENTSTATUS_CHARGING);
+    if (bACPresent) bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+    else bitClear(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+    if (iRemaining == iFullChargeCapacity) bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+    else bitClear(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+
+    // Discharging
+    if (bDischarging)
+    {
+        bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
+        // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
+
+        if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit) bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+        else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+
+    }
+    else
+    {
+        bitClear(iPresentStatus, PRESENTSTATUS_DISCHARGING);
+        bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+    }
+
+    // Shutdown requested
+    if (iDelayBe4ShutDown > 0)
+    {
+        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+        DBPRINTLN("shutdown requested");
+    }
+    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+
+    //if (bForceShutdown)
+    //{
+    //    bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+    //}
+
+    // Shutdown imminent
+    if ((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
+        (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
+    {
+        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+        DBPRINTLN("shutdown imminent");
+    }
+    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+
+
+
+    bitSet(iPresentStatus, PRESENTSTATUS_BATTPRESENT);
+
+}
 
 void loop(void)
 {
@@ -339,18 +436,6 @@ void loop(void)
 
         iIntTimer += 1;     // Send report to PC every few seconds, change or not.
 
-        //*********** Measurements Unit ****************************
-        bool bCharging = digitalRead(PIN_INPUT_PWR_FAIL);
-        //bool bForceShutdown = digitalRead(6) ? false : true;  // Sid added for temperary test
-        bool bACPresent = bCharging;    // TODO - replace with sensor
-        bool bDischarging = !bCharging; // TODO - replace with sensor
-        int iA7 = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
-
-        //if (true)
-        //{
-        batVoltage = map(iA7, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
-        if (batVoltage < 0)
-            batVoltage = 0;
 
         // If not enabled: Disable all updates. It seems like just suppressing the sending of reports to the PC isn't enough to 
         // keep the PC from shutting down when a low voltage is sensed. Interrupt driven something somewhere??
@@ -358,68 +443,9 @@ void loop(void)
         if (StoreEE.msgPcEnabled)   
         {
 
-            int iRemainingInt = map(batVoltage, StoreEE.batEmptyVoltage, StoreEE.batFullVoltage, 0, 100);
-            iRemaining = constrain(iRemainingInt, 0, 100);
-            //}
-            //else
-            //{
-            //    iRemaining = (byte)(round((float)100 * iA7 / 1024));
-            //}
 
-            iRunTimeToEmpty = (uint16_t)round((float)StoreEE.iAvgTimeToEmpty * iRemaining / 100);
-
-            // Charging
-            if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
-            else bitClear(iPresentStatus, PRESENTSTATUS_CHARGING);
-            if (bACPresent) bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-            else bitClear(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-            if (iRemaining == iFullChargeCapacity) bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
-            else bitClear(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
-
-            // Discharging
-            if (bDischarging)
-            {
-                bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-                // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
-
-                if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit) bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-                else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-
-            }
-            else
-            {
-                bitClear(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-                bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
-            }
-
-            // Shutdown requested
-            if (iDelayBe4ShutDown > 0)
-            {
-                bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-                DBPRINTLN("shutdown requested");
-            }
-            else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-
-            //if (bForceShutdown)
-            //{
-            //    bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-            //}
-
-            // Shutdown imminent
-            if ((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
-                (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
-            {
-                bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-                DBPRINTLN("shutdown imminent");
-            }
-            else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-
-
-
-            bitSet(iPresentStatus, PRESENTSTATUS_BATTPRESENT);
-
-
-
+            // Read battery, calc % charge, time remaining, status bits to set/clear
+            UpdateBatteryStatus(bCharging, bACPresent, bDischarging);
 
             ////************ Delay ****************************************
             //delay(1000);
@@ -440,34 +466,42 @@ void loop(void)
                )
             {
 
+#if SEND_UPDATE_RPTS
                 digitalWrite(PIN_LOGIC_TRIG, LOW); //  Trig on low going edge
 
                 //if (false)
                 //if (StoreEE.msgPcEnabled)
                 //{
-                    PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
-                    if (bDischarging) PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
-                    iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-                    //DBPRINTLN("Sent bat status to PC");
-                    SERIALPORT_PRINT("Sent bat status to PC, Result = ");
+                    SERIALPORT_PRINT("Comms with PC (neg=bad): ");
+
+                    iRes = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
                     SERIALPORT_PRINT(iRes);
-                    SERIALPORT_PRINT(", Remaining = ");
+                    SERIALPORT_PRINT(",");
+
+                    if (bDischarging)
+                    {
+                        iRes = PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
+                        SERIALPORT_PRINT(iRes);
+                        SERIALPORT_PRINT(",");
+                    }
+                    iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+                    SERIALPORT_PRINT(iRes);
+                    //DBPRINTLN("Sent bat status to PC");
+                    SERIALPORT_PRINT(", Batt Remaining = ");
                     SERIALPORT_PRINT(iRemaining);
+                    SERIALPORT_PRINT("%, ");
+                    SERIALPORT_PRINT(iRunTimeToEmpty / 60);
+                    SERIALPORT_PRINT(":");
+                    SERIALPORT_PRINT(iRunTimeToEmpty % 60);
+                    SERIALPORT_PRINT(", Discharging: ");
+                    SERIALPORT_PRINT(bDischarging ? "Y" : "N");
                     SERIALPORT_PRINT(", Status = 0x");
                     SERIALPORT_PRINT(iPresentStatus, HEX);
-                    SERIALPORT_PRINT(", Discharging: ");
-                    SERIALPORT_PRINTLN(bDischarging ? "Y" : "N");
-
-                    DBPRINT("To Empty mm:ss ");
-                    DBPRINT(iRunTimeToEmpty / 60);
-                    DBPRINT(":");
-                    DBPRINT(iRunTimeToEmpty % 60);
-                    DBPRINT(", Comm with PC (negative=bad): ");
-                    DBPRINT(iRes);
-                    DBPRINT(", ");
+                    SERIALPORT_PRINT(", Comm with PC (neg=bad): ");
+                    SERIALPORT_PRINTLN(iRes);
                 //}
                 digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig'd on low going edge, back to high 
-
+#endif // SEND_UPDATE_RPTS
                 // DOYET: attache LED to pint 10
                 //if (iRes < 0)
                 //{
@@ -486,7 +520,7 @@ void loop(void)
                 else
                     status_HID = stat_Error;
 
-            }
+            }//end of: did anything change?
         }//end if (StoreEE.msgPcEnabled)
         else
         {
@@ -494,14 +528,17 @@ void loop(void)
         }
 
 
-        doDebugPrints = true;
+        
         DBPRINT("BatV*100: ");
         DBPRINTLN(batVoltage);
-        SERIALPORT_PRINT("BatV*100:: ");  // DBC.008
-        SERIALPORT_PRINTLN(batVoltage);  // DBC.008
+        //SERIALPORT_PRINT("BatV*100:: ");  // DBC.008
+        //SERIALPORT_PRINTLN(batVoltage);  // DBC.008
 
-        SERIALPORT_PRINTLN(USBDebug);                   // DBC.009
-        
+        if (USBDebug[0])
+        {
+            SERIALPORT_PRINTLN(USBDebug);                   // DBC.009
+        }
+
         if(USBCDCNeeded) 
             Serial.flush(); 
         else 
@@ -788,7 +825,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
     {
         serialPtr->println();
         serialPtr->println(F(PROG_NAME_VERSION));
-        serialPtr->println("\nCompiled at: " __DATE__ ", " __TIME__);
+        serialPtr->println("Compiled at: " __DATE__ ", " __TIME__);
         serialPtr->println();
 
         serialPtr->println(F("Present Settings:"));
@@ -814,9 +851,16 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
         serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         serialPtr->print(F("Battery Voltage*100: ")); serialPtr->println(batVoltage);
-
-
-        serialPtr->println(F("   1:dbg "));
+        serialPtr->print(", Batt Remaining = ");
+        serialPtr->print(iRemaining);
+        serialPtr->print("%, ");
+        serialPtr->print(iRunTimeToEmpty / 60);
+        serialPtr->print(":");
+        serialPtr->println(iRunTimeToEmpty % 60);
+        serialPtr->print("Discharging: ");
+        serialPtr->print(bDischarging ? "Y" : "N");
+        serialPtr->print(", Status = 0x");
+        serialPtr->println(iPresentStatus, HEX);
 
     }
 
@@ -857,7 +901,12 @@ void FactoryDefault(void)
     StoreEE.iRemnCapacityLimit = 5; // low at 5%
     StoreEE.msgPcEnabled = false;
 
-    //DBPRINTLN(F("Restored factory defaults."));       // DOYET PUT BACK
+    enableDebugPrints(StoreEE.debugFlags);
+
+    Serial1.println(F("Restored factory defaults."));       // DOYET PUT BACK
+
+    if(USBCDCNeeded && Serial)
+        Serial.println(F("Restored factory defaults."));       // DOYET PUT BACK
 }
 
 
