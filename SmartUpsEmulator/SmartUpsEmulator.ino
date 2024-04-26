@@ -20,6 +20,8 @@
 #include "HandyHelpers.h"
 HandyHelpers MH; // My Handy Helper
 
+#include "ProjectDefs.h"	// For our Smart UPS Emulator project. Defs SERIAL1_DEBUG
+
 //#define MINUPDATEINTERVAL   26
 #define MINUPDATEINTERVAL   10
 
@@ -27,7 +29,9 @@ int iIntTimer = 0;
 bool SerialIsInitialized = false;
 
 #define SEND_INITIAL_RPT false      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
-#define SEND_UPDATE_RPTS false
+//#define SEND_UPDATE_RPTS false
+//#define SEND_INITIAL_RPT true      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
+#define SEND_UPDATE_RPTS true
 
 
 /*
@@ -150,6 +154,7 @@ struct EEPROM_Struct
 
     // Parameters for ACPI compliancy
     byte iWarnCapacityLimit;    // warning at 10%
+    byte reserved8_5;           // Offset the byte below
     byte iRemnCapacityLimit;    // low at 5%
     bool msgPcEnabled;
 
@@ -182,6 +187,8 @@ void watchDogReset(void);
 void printHelp(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
 void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
 void showPersistentSettings(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
+void showParameters(Stream *serialPtr);
+
 void enableDebugPrints(uint8_t debugPrBits);
 #define DBG_PRINT_MAIN      0    // 0x01
 
@@ -210,7 +217,12 @@ Timer_ms statusLedTimerOff;
 extern bool USBCDCNeeded;  // DBC.008b
 extern long USBSwitchTime[6];  // DBC.008c
 extern long USBSwitchCount[6]; // DBC.008d
-extern char USBDebug[512];     // DBC.009
+
+uint8_t pcSetErrorCount = 0;    // How many times the host (PC) tried to set HID_PD_REMNCAPACITYLIMIT value
+uint8_t pcSetValue      = 0;    // The value that the host (PC) tried to set HID_PD_REMNCAPACITYLIMIT to
+
+int memStillFree = 32000;   // Print every time this decreases
+byte priorRemnCapacityLimit = 0;    // Will notifiy when StoreEE.iRemnCapacityLimit changes
 
 void setup(void)
 {
@@ -233,6 +245,8 @@ void setup(void)
             Serial1.println(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
         FactoryDefault();
     }
+
+    priorRemnCapacityLimit = StoreEE.iRemnCapacityLimit;    // Will notifiy when StoreEE.iRemnCapacityLimit changes
 
     // Init Watchdog DOYET
 
@@ -274,31 +288,27 @@ void setup(void)
     UpdateBatteryStatus(bCharging, bACPresent, bDischarging);
 
     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+    PowerDevice.setFeature(HID_PD_RUNTIMETOEMPTY,    &iRunTimeToEmpty           , sizeof(iRunTimeToEmpty            ));
+    PowerDevice.setFeature(HID_PD_AVERAGETIME2FULL,  &StoreEE.iAvgTimeToFull    , sizeof(StoreEE.iAvgTimeToFull     ));
+    PowerDevice.setFeature(HID_PD_AVERAGETIME2EMPTY, &StoreEE.iAvgTimeToEmpty   , sizeof(StoreEE.iAvgTimeToEmpty    ));
+    PowerDevice.setFeature(HID_PD_REMAINTIMELIMIT,   &StoreEE.iRemainTimeLimit  , sizeof(StoreEE.iRemainTimeLimit   ));
+    PowerDevice.setFeature(HID_PD_DELAYBE4REBOOT,    &iDelayBe4Reboot           , sizeof(iDelayBe4Reboot            ));
+    PowerDevice.setFeature(HID_PD_DELAYBE4SHUTDOWN,  &iDelayBe4ShutDown         , sizeof(iDelayBe4ShutDown          ));
+    PowerDevice.setFeature(HID_PD_RECHARGEABLE,      &bRechargable              , sizeof(bRechargable               ));
+    PowerDevice.setFeature(HID_PD_CAPACITYMODE,      &bCapacityMode             , sizeof(bCapacityMode              ));
+    PowerDevice.setFeature(HID_PD_CONFIGVOLTAGE,     &iConfigVoltage            , sizeof(iConfigVoltage             ));
+    PowerDevice.setFeature(HID_PD_VOLTAGE,           &iVoltage                  , sizeof(iVoltage                   ));
+    PowerDevice.setFeature(HID_PD_AUDIBLEALARMCTRL,  &iAudibleAlarmCtrl         , sizeof(iAudibleAlarmCtrl          ));
+    PowerDevice.setFeature(HID_PD_DESIGNCAPACITY,    &iDesignCapacity           , sizeof(iDesignCapacity            ));
+    PowerDevice.setFeature(HID_PD_FULLCHRGECAPACITY, &iFullChargeCapacity       , sizeof(iFullChargeCapacity        ));
+    PowerDevice.setFeature(HID_PD_REMAININGCAPACITY, &iRemaining                , sizeof(iRemaining                 ));
+    PowerDevice.setFeature(HID_PD_WARNCAPACITYLIMIT, &StoreEE.iWarnCapacityLimit, sizeof(StoreEE.iWarnCapacityLimit ));
+    PowerDevice.setFeature(HID_PD_REMNCAPACITYLIMIT, &StoreEE.iRemnCapacityLimit, sizeof(StoreEE.iRemnCapacityLimit ));
+    PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY1, &bCapacityGranularity1     , sizeof(bCapacityGranularity1      ));
+    PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY2, &bCapacityGranularity2     , sizeof(bCapacityGranularity2      ));
 
-    PowerDevice.setFeature(HID_PD_RUNTIMETOEMPTY,    &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
-    PowerDevice.setFeature(HID_PD_AVERAGETIME2FULL,  &StoreEE.iAvgTimeToFull, sizeof(StoreEE.iAvgTimeToFull));
-    PowerDevice.setFeature(HID_PD_AVERAGETIME2EMPTY, &StoreEE.iAvgTimeToEmpty, sizeof(StoreEE.iAvgTimeToEmpty));
-    PowerDevice.setFeature(HID_PD_REMAINTIMELIMIT,   &StoreEE.iRemainTimeLimit, sizeof(StoreEE.iRemainTimeLimit));
-    PowerDevice.setFeature(HID_PD_DELAYBE4REBOOT,    &iDelayBe4Reboot, sizeof(iDelayBe4Reboot));
-    PowerDevice.setFeature(HID_PD_DELAYBE4SHUTDOWN,  &iDelayBe4ShutDown, sizeof(iDelayBe4ShutDown));
-
-    PowerDevice.setFeature(HID_PD_RECHARGEABLE, &bRechargable, sizeof(bRechargable));
-    PowerDevice.setFeature(HID_PD_CAPACITYMODE, &bCapacityMode, sizeof(bCapacityMode));
-    PowerDevice.setFeature(HID_PD_CONFIGVOLTAGE, &iConfigVoltage, sizeof(iConfigVoltage));
-    PowerDevice.setFeature(HID_PD_VOLTAGE, &iVoltage, sizeof(iVoltage));
-
-    PowerDevice.setStringFeature(HID_PD_IDEVICECHEMISTRY, &bDeviceChemistry, STRING_DEVICECHEMISTRY);
-    PowerDevice.setStringFeature(HID_PD_IOEMINFORMATION, &bOEMVendor, STRING_OEMVENDOR);
-
-    PowerDevice.setFeature(HID_PD_AUDIBLEALARMCTRL, &iAudibleAlarmCtrl, sizeof(iAudibleAlarmCtrl));
-
-    PowerDevice.setFeature(HID_PD_DESIGNCAPACITY, &iDesignCapacity, sizeof(iDesignCapacity));
-    PowerDevice.setFeature(HID_PD_FULLCHRGECAPACITY, &iFullChargeCapacity, sizeof(iFullChargeCapacity));
-    PowerDevice.setFeature(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
-    PowerDevice.setFeature(HID_PD_WARNCAPACITYLIMIT, &StoreEE.iWarnCapacityLimit, sizeof(StoreEE.iWarnCapacityLimit));
-    PowerDevice.setFeature(HID_PD_REMNCAPACITYLIMIT, &StoreEE.iRemnCapacityLimit, sizeof(StoreEE.iRemnCapacityLimit));
-    PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY1, &bCapacityGranularity1, sizeof(bCapacityGranularity1));
-    PowerDevice.setFeature(HID_PD_CPCTYGRANULARITY2, &bCapacityGranularity2, sizeof(bCapacityGranularity2));
+    PowerDevice.setStringFeature(HID_PD_IDEVICECHEMISTRY, &bDeviceChemistry, STRING_DEVICECHEMISTRY );
+    PowerDevice.setStringFeature(HID_PD_IOEMINFORMATION, &bOEMVendor,        STRING_OEMVENDOR       );
 
     batVoltage = StoreEE.batFullVoltage;
 
@@ -309,43 +319,46 @@ void setup(void)
         while (!Serial)
             delay(10);
         SerialIsInitialized = true;
-        Serial.print("USBCDCNeeded: ");  // DBC.008b
+        Serial.print(F("USBCDCNeeded: "));  // DBC.008b
         Serial.println(USBCDCNeeded);    // DBC.008b
     }
 #endif
 
-    Serial1.print("USBCDCNeeded: ");  // DBC.008b
+    Serial1.print(F("USBCDCNeeded: "));  // DBC.008b
     Serial1.println(USBCDCNeeded);    // DBC.008b
 
     Serial1.flush();
 
     // Initially say all is well and avoid PC shutdown on first plug-in.
     bool bCharging = true;
-    bool bDischarging = !bCharging; // TODO - replace with sensor
+    bDischarging = !bCharging; // TODO - replace with sensor
     //
     // Send initial report with everything looking good, update in main loop4
 #if SEND_INITIAL_RPT
     int iRes0 = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
-    delay(1000);
+    delay(100);
     if (bDischarging)
     {
         PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
         delay(1000);
     }
     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-    SERIALPORT_PRINT("Initial capacity to PC, Result = ");
+    SERIALPORT_PRINT(F("Initial capacity to PC, Result = "));
     SERIALPORT_PRINT(iRes0);
-    SERIALPORT_PRINT(", status to PC, Result = ");
+    SERIALPORT_PRINT(F(", status to PC, Result = "));
     SERIALPORT_PRINTLN(iRes);
-    SERIALPORT_PRINTLN("Sending initial all-good report. iRemaining: " + String(iRemaining) + ", Status Bits: 0x" + String(iPresentStatus, HEX));
+    SERIALPORT_PRINT(F("Sending initial all-good report. iRemaining: "));
+    SERIALPORT_PRINT(F(iRemaining));
+    SERIALPORT_PRINT(F(", Status Bits: 0x"
+    SERIALPORT_PRINTLN(String(iPresentStatus, HEX));
 
     SERIALPORT_PRINTLN(F(PROG_NAME_VERSION));
     SERIALPORT_PRINTLN(F(__FILE__));               // Print name of the source file
     SERIALPORT_PRINTLN("\nCompiled at: " __DATE__ ", " __TIME__);
-    SERIALPORT_PRINTLN("Starting....\n\r");
+    SERIALPORT_PRINTLN(F("Starting....\n\r"));
 #endif // SEND_INITIAL_RPT
 
-    delay(2000);
+    delay(200);
 
     statusLedTimerOn.Start(10);
 }
@@ -387,7 +400,15 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
         bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
         // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
 
-        if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit) bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+        if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit)
+        {
+            SERIALPORT_PRINT(F("Shutdown now! Rtte="));
+            SERIALPORT_PRINTLN(iRunTimeToEmpty);
+            SERIALPORT_Addr->flush();
+            delay(500);
+
+            bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+        }
         else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
 
     }
@@ -401,7 +422,7 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
     if (iDelayBe4ShutDown > 0)
     {
         bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
-        DBPRINTLN("shutdown requested");
+        DBPRINTLN(F("shutdown requested"));
     }
     else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
 
@@ -415,7 +436,7 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
         (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
     {
         bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
-        DBPRINTLN("shutdown imminent");
+        DBPRINTLN(F("shutdown imminent"));
     }
     else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
 
@@ -472,7 +493,19 @@ void loop(void)
                 //if (false)
                 //if (StoreEE.msgPcEnabled)
                 //{
-                    SERIALPORT_PRINT("Comms with PC (neg=bad): ");
+                    SERIALPORT_PRINT(F("Sending: Batt Remaining = "));
+                    SERIALPORT_PRINT(iRemaining);
+                    SERIALPORT_PRINT(F("%, "));
+                    SERIALPORT_PRINT(iRunTimeToEmpty / 60);
+                    SERIALPORT_PRINT(F(":"));
+                    SERIALPORT_PRINT(iRunTimeToEmpty % 60);
+                    SERIALPORT_PRINT(F(", Discharging: "));
+                    SERIALPORT_PRINT(bDischarging ? "Y" : "N");
+                    SERIALPORT_PRINT(F(", Status = 0x"));
+                    SERIALPORT_PRINTLN(iPresentStatus, HEX);
+                    SERIALPORT_Addr->flush();
+
+                    SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
 
                     iRes = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
                     SERIALPORT_PRINT(iRes);
@@ -485,20 +518,8 @@ void loop(void)
                         SERIALPORT_PRINT(",");
                     }
                     iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-                    SERIALPORT_PRINT(iRes);
-                    //DBPRINTLN("Sent bat status to PC");
-                    SERIALPORT_PRINT(", Batt Remaining = ");
-                    SERIALPORT_PRINT(iRemaining);
-                    SERIALPORT_PRINT("%, ");
-                    SERIALPORT_PRINT(iRunTimeToEmpty / 60);
-                    SERIALPORT_PRINT(":");
-                    SERIALPORT_PRINT(iRunTimeToEmpty % 60);
-                    SERIALPORT_PRINT(", Discharging: ");
-                    SERIALPORT_PRINT(bDischarging ? "Y" : "N");
-                    SERIALPORT_PRINT(", Status = 0x");
-                    SERIALPORT_PRINT(iPresentStatus, HEX);
-                    SERIALPORT_PRINT(", Comm with PC (neg=bad): ");
                     SERIALPORT_PRINTLN(iRes);
+                    //DBPRINTLN(F("Sent bat status to PC"));
                 //}
                 digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig'd on low going edge, back to high 
 #endif // SEND_UPDATE_RPTS
@@ -529,14 +550,32 @@ void loop(void)
 
 
         
-        DBPRINT("BatV*100: ");
+        DBPRINT(F("BatV*100: "));
         DBPRINTLN(batVoltage);
         //SERIALPORT_PRINT("BatV*100:: ");  // DBC.008
         //SERIALPORT_PRINTLN(batVoltage);  // DBC.008
 
+#if SERIAL1_IRQ_DEBUG
         if (USBDebug[0])
         {
             SERIALPORT_PRINTLN(USBDebug);                   // DBC.009
+            if (USBCDCNeeded)
+                Serial1.print(USBDebug);    // Print to Serial1 if not already
+
+            USBDebug[0] = 0;
+        }
+#endif
+
+        if (pcSetErrorCount)
+        {
+            char outLine[60];
+            sprintf(outLine, "## PC Setting REMNCAPACITYLIMIT to 0x%x (Ignored)\r\n", pcSetValue);
+            pcSetErrorCount = 0;
+            pcSetValue      = 0;
+            SERIALPORT_PRINT(outLine);
+            
+            if (USBCDCNeeded)
+                    Serial1.print(outLine); // Print to Serial1 if not already
         }
 
         if(USBCDCNeeded) 
@@ -564,6 +603,21 @@ void loop(void)
         statusLedTimerOn.Start(DurOn);
         digitalWrite(PIN_LED_STATUS, HIGH);
     }
+
+    if (memStillFree > freeMemory())
+    {
+        memStillFree = freeMemory();
+        SERIALPORT_PRINT(F("Available Memory: "));
+        SERIALPORT_PRINTLN(memStillFree);
+    }
+
+    if (priorRemnCapacityLimit != StoreEE.iRemnCapacityLimit)
+    {
+        priorRemnCapacityLimit = StoreEE.iRemnCapacityLimit;
+        SERIALPORT_PRINT(F("iRemnCapacityLimit CHANGED, now: "));
+        SERIALPORT_PRINTLN(priorRemnCapacityLimit);
+    }
+
 }
 
 //#ifdef CDC_ENABLED  // DBC.007
@@ -616,7 +670,7 @@ void handleLaptopInput(void)
 
         if (indexUserIn == 0)
         {
-            DBPRINT("\nCmd: ");
+            DBPRINT(F("\nCmd: "));
         }
     } // end while (SERIALPORT_AVAILABLE())
 
@@ -640,7 +694,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 {
                 case 'N': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 1, StoreEE.msgPcEnabled , "Enable PC Reporting/Shutdown"); break;
                 default:
-                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
                     break;
                 }
@@ -654,7 +708,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batFullVoltage , "Battery Full Charge V"); break;
                 case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batEmptyVoltage, "Battery Empty V"      ); break;
                 default:
-                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
                     break;
                 }
@@ -682,7 +736,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     break;
 
                 default:
-                    serialPtr->print("ERROR: Bad Time command: ");
+                    serialPtr->print(F("ERROR: Bad Time command: "));
                     serialPtr->println(userIn);
                     break;
                 }
@@ -716,7 +770,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
 
                 default:
-                    serialPtr->print("ERROR: Bad B (Battery) command: ");
+                    serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
                     break;
                 }
@@ -732,7 +786,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'E':
                     break;
 
-                case 'Q':
+                case 'P':
+                    showParameters(serialPtr);
                     break;
 
                 default:
@@ -796,16 +851,16 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             {                                              // DBC.008
               serialPtr->print(F("CDC_ACM_INTERFACE: "));  // DBC.008
               serialPtr->println(CDC_ACM_INTERFACE);       // DBC.008
-              //serialPtr->print(F("HID_INTERFACE: "));      // DBC.008
-              //serialPtr->println(HID_INTERFACE);           // DBC.008 SLR HID_INTERFACE wasn't defined
+              serialPtr->print(F("HID_INTERFACE: "));      // DBC.008
+              serialPtr->println(HID_INTERFACE);           // DBC.008 SLR HID_INTERFACE wasn't defined
             }                                              // DBC.008
             break;                                         // DBC.008
 
         default:
             serialPtr->print(F("\nUnknown command ["));
             serialPtr->print(userIn);
-            serialPtr->println("].");
-            serialPtr->println("H for Help\n");
+            serialPtr->println(F("]."));
+            serialPtr->println(F("H for Help\n"));
             indexUserIn = 0;
             userIn[0] = 0;
             break;
@@ -825,7 +880,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
     {
         serialPtr->println();
         serialPtr->println(F(PROG_NAME_VERSION));
-        serialPtr->println("Compiled at: " __DATE__ ", " __TIME__);
+        serialPtr->print(F("Compiled at: "));
+        serialPtr->println(__DATE__ ", " __TIME__);
         serialPtr->println();
 
         serialPtr->println(F("Present Settings:"));
@@ -839,6 +895,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(F("         (Low V A2D value: "));                       serialPtr->print(StoreEE.calibPointLow.a2dValue); serialPtr->println(F(")"));
         serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100)  : ")); serialPtr->print(StoreEE.calibPointHigh.voltage); serialPtr->println(F(" V*100"));
         serialPtr->print(F("         (High V A2D value: "));                      serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
+        serialPtr->print(F("                            iRemnCapacityLimit : ")); serialPtr->print(StoreEE.iRemnCapacityLimit); serialPtr->println(F(")"));
         serialPtr->println(F(" To calibrate voltage sensing for this board:"));
         serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
         serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
@@ -851,17 +908,45 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
         serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         serialPtr->print(F("Battery Voltage*100: ")); serialPtr->println(batVoltage);
-        serialPtr->print(", Batt Remaining = ");
+        serialPtr->print(F(", Batt Remaining = "));
         serialPtr->print(iRemaining);
-        serialPtr->print("%, ");
+        serialPtr->print(F("%, "));
         serialPtr->print(iRunTimeToEmpty / 60);
-        serialPtr->print(":");
+        serialPtr->print(F(":"));
         serialPtr->println(iRunTimeToEmpty % 60);
-        serialPtr->print("Discharging: ");
+        serialPtr->print(F("Discharging: "));
         serialPtr->print(bDischarging ? "Y" : "N");
-        serialPtr->print(", Status = 0x");
+        serialPtr->print(F(", Status = 0x"));
         serialPtr->println(iPresentStatus, HEX);
+        serialPtr->print(F("Available Memory: "));
+        serialPtr->println(freeMemory());
+    }
 
+    void showParameters(Stream * serialPtr)
+    {
+        serialPtr->println();
+        serialPtr->print(F("RUNTIMETOEMPTY   : ")); serialPtr->println(iRunTimeToEmpty            );
+        serialPtr->print(F("AVERAGETIME2FULL : ")); serialPtr->println(StoreEE.iAvgTimeToFull     );
+        serialPtr->print(F("AVERAGETIME2EMPTY: ")); serialPtr->println(StoreEE.iAvgTimeToEmpty    );
+        serialPtr->print(F("REMAINTIMELIMIT  : ")); serialPtr->println(StoreEE.iRemainTimeLimit   );
+        serialPtr->print(F("DELAYBE4REBOOT   : ")); serialPtr->println(iDelayBe4Reboot            );
+        serialPtr->print(F("DELAYBE4SHUTDOWN : ")); serialPtr->println(iDelayBe4ShutDown          );
+        serialPtr->print(F("RECHARGEABLE     : ")); serialPtr->println(bRechargable               );
+        serialPtr->print(F("CAPACITYMODE     : ")); serialPtr->println(bCapacityMode              );
+        serialPtr->print(F("CONFIGVOLTAGE    : ")); serialPtr->println(iConfigVoltage             );
+        serialPtr->print(F("VOLTAGE          : ")); serialPtr->println(iVoltage                   );
+        serialPtr->print(F("AUDIBLEALARMCTRL : ")); serialPtr->println(iAudibleAlarmCtrl          );
+        serialPtr->print(F("DESIGNCAPACITY   : ")); serialPtr->println(iDesignCapacity            );
+        serialPtr->print(F("FULLCHRGECAPACITY: ")); serialPtr->println(iFullChargeCapacity        );
+        serialPtr->print(F("REMAININGCAPACITY: ")); serialPtr->println(iRemaining                 );
+        serialPtr->print(F("WARNCAPACITYLIMIT: ")); serialPtr->println(StoreEE.iWarnCapacityLimit );
+        serialPtr->print(F("REMNCAPACITYLIMIT: ")); serialPtr->println(StoreEE.iRemnCapacityLimit );
+        serialPtr->print(F("CPCTYGRANULARITY1: ")); serialPtr->println(bCapacityGranularity1      );
+        serialPtr->print(F("CPCTYGRANULARITY2: ")); serialPtr->println(bCapacityGranularity2      );
+        //serialPtr->print(F("IDEVICECHEMISTRY : ")); serialPtr->println(STRING_DEVICECHEMISTRY );  // These are in flash
+        //serialPtr->print(F("IOEMINFORMATION  : ")); serialPtr->println(STRING_OEMVENDOR       );
+        serialPtr->print(F("batVoltage       : ")); serialPtr->println(batVoltage             );
+        serialPtr->print(F("iPresentStatus   : 0x")); serialPtr->println(iPresentStatus, HEX  );
     }
 
 
@@ -869,7 +954,8 @@ void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
 {
     serialPtr->println(F("\n----Menu----"));
     showPersistentSettings(serialPtr, handleUsbOnlyOptions); // DBC.007
-    serialPtr->println(F(""));
+    serialPtr->println(F("HP - Show Parameters"));
+    serialPtr->println(F("Z  - Restore Factory Defaults"));
 }
 
 
@@ -899,7 +985,7 @@ void FactoryDefault(void)
     // Parameters for ACPI compliancy
     StoreEE.iWarnCapacityLimit = 10; // warning at 10%
     StoreEE.iRemnCapacityLimit = 5; // low at 5%
-    StoreEE.msgPcEnabled = false;
+    StoreEE.msgPcEnabled = true;
 
     enableDebugPrints(StoreEE.debugFlags);
 
@@ -913,4 +999,20 @@ void FactoryDefault(void)
 void enableDebugPrints(uint8_t debugPrBits)
 {
     doDebugPrints      = bitRead(debugPrBits, DBG_PRINT_MAIN     ) ? true : false;   // 0    // 0x01 Turn off debug printing for this file
+}
+
+//
+// Used in calculating free memory.
+//
+extern unsigned int __bss_end;
+extern void *__brkval;
+//
+// Returns the current amount of free memory in bytes.
+//
+int freeMemory() 
+{
+	int free_memory;
+	if ((int) __brkval)
+		return ((int) &free_memory) - ((int) __brkval);
+	return ((int) &free_memory) - ((int) &__bss_end);
 }

@@ -1,4 +1,5 @@
 #include <HIDPowerDevice.h>
+// Sid changed input to A5
 
 #define MINUPDATEINTERVAL   26
 
@@ -97,7 +98,9 @@ void loop() {
   bool bCharging = digitalRead(4);
   bool bACPresent = bCharging;    // TODO - replace with sensor
   bool bDischarging = !bCharging; // TODO - replace with sensor
-  int iA7 = analogRead(A7);       // TODO - this is for debug only. Replace with charge estimation
+
+  // ## SID Changed below to A5
+  int iA7 = analogRead(A5);       // TODO - this is for debug only. Replace with charge estimation 
 
   iRemaining = (byte)(round((float)100*iA7/1024));
   iRunTimeToEmpty = (uint16_t)round((float)iAvgTimeToEmpty*iRemaining/100);

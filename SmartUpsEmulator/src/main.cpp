@@ -33,7 +33,10 @@ void setupUSB() { }
 //volatile bool USBCDCNeeded = false;      // DBC.008b
 bool USBCDCNeeded = false;      // DBC.008b				SLR - Match the other def's
 
-volatile char USBDebug[512] = {0};       // DBC.009
+#include "ProjectDefs.h"	// For our Smart UPS Emulator project. Defs SERIAL1_DEBUG
+#if SERIAL1_IRQ_DEBUG
+    char USBDebug[SIZE_USBDebug] = {0};       // DBC.009
+#endif
 
 void readSwitch() {                                // DBC.009
 	noInterrupts();                                  // DBC.009

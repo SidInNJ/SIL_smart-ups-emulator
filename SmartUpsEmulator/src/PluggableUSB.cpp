@@ -25,8 +25,6 @@
 
 extern uint8_t _initEndpoints[];
 
-extern char USBDebug[512];          // DBC.009
-
 int PluggableUSB_::getInterface(uint8_t* interfaceCount)
 {
 	int sent = 0;
@@ -72,8 +70,6 @@ bool PluggableUSB_::setup(USBSetup& setup)
 	return false;
 }
 
-extern bool USBCDCNeeded;  // DBC.008b
-extern char USBDebug[512];          // DBC.009
 
 bool PluggableUSB_::plug(PluggableUSBModule *node)
 {
@@ -96,7 +92,7 @@ bool PluggableUSB_::plug(PluggableUSBModule *node)
 
       if (!USBCDCNeeded)                                                        // SLR 2024-04-19   
       {
-          Serial1.println("USBCDCNeeded NOT set before PluggableUSB_::plug");   // SLR 2024-04-19
+          Serial1.println(F("USBCDCNeeded NOT set before PluggableUSB_::plug"));   // SLR 2024-04-19
           USBCDCNeeded = true;                                                  // SLR 2024-04-19   
       }
 
@@ -114,12 +110,14 @@ bool PluggableUSB_::plug(PluggableUSBModule *node)
 		_initEndpoints[lastEp] = node->endpointType[i];
 		lastEp++;
 	}
+#if SERIAL1_DEBUG
 	//sprintf(&USBDebug[strlen(USBDebug)], "node->pluggedInterface %i\r\n", node->pluggedInterface);  // DBC.009
 	//sprintf(&USBDebug[strlen(USBDebug)], "node->pluggedEndpoint %i\r\n", node->pluggedEndpoint);        // DBC.009
 	//sprintf(&USBDebug[strlen(USBDebug)], "node->numInterfaces %i\r\n", node->numInterfaces);  // DBC.009
 	//sprintf(&USBDebug[strlen(USBDebug)], "node->numEndpoints %i\r\n", node->numEndpoints);  // DBC.009
 	//sprintf(&USBDebug[strlen(USBDebug)], "lastIf %i\r\n", lastIf);        // DBC.009
 	//sprintf(&USBDebug[strlen(USBDebug)], "lastEp %i\r\n", lastEp);        // DBC.009
+#endif
 	return true;
 	// restart USB layer???
 }

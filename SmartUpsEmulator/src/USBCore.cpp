@@ -73,15 +73,14 @@ const u8 STRING_MANUFACTURER[] PROGMEM = USB_MANUFACTURER;
 
 #ifdef CDC_ENABLED
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
-	//D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
-    D_DEVICE(0x00,0x00,0x00,64,USB_UPS_VID,USB_UPS_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a  SLR Make similiar to final
+	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
 #else // CDC_DISABLED
 // The default descriptor uses USB class OxEF, subclass 0x02 with protocol 1
 // which means "Interface Association Descriptor" - that's needed for the CDC,
 // but doesn't make much sense as a default for custom devices when CDC is disabled.
 // (0x00 means "Use class information in the Interface Descriptors" which should be generally ok)
 DeviceDescriptor USB_DeviceDescriptorIAD =                                               // DBC.008
-	//D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
+  //D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);
     D_DEVICE(0x00,0x00,0x00,64,USB_UPS_VID,USB_UPS_PID,0x100,IMANUFACTURER,IPRODUCT,ISERIAL,1);   // DBC.009a  SLR Make similiar to final
 #endif
 
@@ -450,10 +449,6 @@ void InitEP(u8 index, u8 type, u8 size)
 }
 
 
-
-extern char USBDebug[512];          // DBC.009
-
-
 static
 void InitEndpoints()
 {
@@ -466,7 +461,9 @@ void InitEndpoints()
 	//for (u8 i = 1; i < sizeof(_initEndpoints) && _initEndpoints[i] != 0; i++)  // DBC.008
 	for (u8 i = 1; i < sizeOfEP && _initEndpoints[i] != 0; i++)                  // DBC.008	
 	{
+#if SERIAL1_DEBUG
 		//sprintf(&USBDebug[strlen(USBDebug)], "_initEndpoints[%i]: %i\r\n", i, _initEndpoints[i]);        // DBC.009  Davis - This never gets called. Why?
+#endif
 		UENUM = i;
 		UECONX = (1<<EPEN);
 		UECFG0X = _initEndpoints[i];
@@ -590,8 +587,8 @@ static u8 SendInterfaces()
   if (USBCDCNeeded)                                            // DBC.008d Switch is pressed
 	{                                                            // DBC.008
 	CDC_GetInterface(&interfaces);
-		cdcInterfaces = interfaces;                                // DBC.008b
-	}                                                            // DBC.008
+		cdcInterfaces = interfaces;     // DBC.008b     SLR NOTE: cdcInterfaces is never used
+	}                                   // DBC.008
 #endif
 
 #ifdef PLUGGABLE_USB_ENABLED

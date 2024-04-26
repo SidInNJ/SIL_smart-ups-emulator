@@ -16,6 +16,8 @@
    SOFTWARE.
  */
 
+#include "ProjectDefs.h"	// For our Smart UPS Emulator project. Defs SERIAL1_DEBUG
+
 #define PLUGGABLE_USB_ENABLED
 
 #if defined(EPRST6)
@@ -62,7 +64,9 @@
 #define IPRODUCT        2
 #define ISERIAL         3
 
-//#define SERIAL1_DEBUG  // DBC.008f  // Uncomment this line to envoke Serial1 debugging
+// Below replaced by define in "ProjectDefs.h"  // SLR
+//#define SERIAL1_DEBUG true  // DBC.008f  // Uncomment this line to envoke Serial1 debugging
+
 //#define USB_UPS_VID 0x0463  // Eaton
 //#define USB_UPS_PID 0xffff  // Eaton UPS
 #define USB_UPS_VID 0x051d  // APC

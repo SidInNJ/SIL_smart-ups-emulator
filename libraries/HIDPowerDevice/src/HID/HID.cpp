@@ -23,7 +23,7 @@
 
 extern bool USBCDCNeeded;           // DBC.009
 
-extern char USBDebug[512];          // DBC.009
+#include "ProjectDefs.h"	// For our Smart UPS Emulator project. Defs SERIAL1_DEBUG
 
 HID_& HID()
 {
@@ -191,7 +191,7 @@ int HID_::SendReport(uint16_t id, const void* data, int len)
 HIDReport* HID_::GetFeature(uint16_t id)
 {
     HIDReport* current;
-    int i=0;
+    uint16_t i=0;
     for(current=rootReport; current && i<reportCount; current=current->next, i++) {
         if(id == current->id) {
             return current;
@@ -249,24 +249,43 @@ bool HID_::setup(USBSetup& setup)
 			idle = setup.wValueL;
 			return true;
 		}
-		if (request == HID_SET_REPORT)
-		{
-                        if(setup.wValueH == HID_REPORT_TYPE_FEATURE)
-                        {
+        if (request == HID_SET_REPORT) {
+            bool okToDoSet = true;
 
-                            HIDReport* current = GetFeature(setup.wValueL);
-                            if(!current) return false;                              
-                            if(setup.wLength != current->length + 1) return false;  
-                            uint8_t* data = new uint8_t[setup.wLength];              
-                            USB_RecvControl(data, setup.wLength);                   
-                            if(*data != current->id) return false;                 
-                            memcpy((uint8_t*)current->data, data+1, current->length); 
-                            delete[] data;                                          
-                            return true;
-                            
-                        }
+            if (setup.wValueH == HID_REPORT_TYPE_FEATURE) {
+                HIDReport *current = GetFeature(setup.wValueL);
+                if (!current) return false;
+                if (setup.wLength != current->length + 1) return false;
+                uint8_t *data = new uint8_t[setup.wLength];
+                USB_RecvControl(data, setup.wLength);       // Read data even if only dropping it
 
-		}
+                uint16_t tValue = data[1];
+                if (setup.wLength > 2) {
+                    tValue |= data[2] << 8;
+                }
+
+                if (setup.wValueL == 0x11) {  // HID_PD_REMNCAPACITYLIMIT
+                    // Report of PC's attempt to set this value via a flag
+                    okToDoSet = false;
+                    pcSetErrorCount++;
+                    pcSetValue = tValue;
+                }
+
+#if SERIAL1_IRQ_DEBUG
+                if (okToDoSet && ((sizeof(USBDebug) - strlen(USBDebug)) > 50)) { // Suppress the common HID_PD_REMNCAPACITYLIMIT problem
+                    // Below will look like: ## PC Setting 0x11 to 0x5b IGNORING ## (about 40 characters)
+                    sprintf(&USBDebug[strlen(USBDebug)], "## PC Setting 0x%x to 0x%x %s##\r\n", setup.wValueL, tValue, !okToDoSet ? "IGNORING " : "");  // SLR 2024-04-25 DOYET
+                    //sprintf(USBDebug, "### setup.wValueL == HID_PD_REMNCAPACITYLIMIT, Ignoring ###\r\n");  // SLR 2024-04-25 DOYET
+                }
+#endif
+
+                if (*data != current->id) return false;
+                if (okToDoSet) memcpy((uint8_t *)current->data, data + 1, current->length);
+                delete[] data;
+                return true;
+            }
+
+        }
 	}
 
 	return false;

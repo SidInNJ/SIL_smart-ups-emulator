@@ -16,13 +16,13 @@
 ** SOFTWARE.  
 */
 
+#include "ProjectDefs.h"	// For our Smart UPS Emulator project. Defs SERIAL1_DEBUG
+
 #include "USBAPI.h"
 #include <avr/wdt.h>
 #include <util/atomic.h>
 
 #if defined(USBCON)
-
-#warning "TEMP COMPILE CONFIRM: desired cdc.cpp is being compiled."
 
 #ifndef CDC_ENABLED
 
