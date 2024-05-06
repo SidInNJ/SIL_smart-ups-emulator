@@ -33,6 +33,7 @@ bool SerialIsInitialized = false;
 //#define SEND_INITIAL_RPT true      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
 #define SEND_UPDATE_RPTS true
 
+#define SHOW_ALL_PARAMS true      // Def to enable cmd 'P' to dump all parameters
 
 /*
  For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
@@ -786,9 +787,11 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'E':
                     break;
 
+#if SHOW_ALL_PARAMS
                 case 'P':
                     showParameters(serialPtr);
                     break;
+#endif
 
                 default:
                       printHelp(serialPtr, handleUsbOnlyOptions);  // DBC.007
@@ -922,33 +925,34 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(freeMemory());
     }
 
+#if SHOW_ALL_PARAMS
     void showParameters(Stream * serialPtr)
     {
         serialPtr->println();
         serialPtr->print(F("RUNTIMETOEMPTY   : ")); serialPtr->println(iRunTimeToEmpty            );
-        serialPtr->print(F("AVERAGETIME2FULL : ")); serialPtr->println(StoreEE.iAvgTimeToFull     );
-        serialPtr->print(F("AVERAGETIME2EMPTY: ")); serialPtr->println(StoreEE.iAvgTimeToEmpty    );
-        serialPtr->print(F("REMAINTIMELIMIT  : ")); serialPtr->println(StoreEE.iRemainTimeLimit   );
-        serialPtr->print(F("DELAYBE4REBOOT   : ")); serialPtr->println(iDelayBe4Reboot            );
-        serialPtr->print(F("DELAYBE4SHUTDOWN : ")); serialPtr->println(iDelayBe4ShutDown          );
-        serialPtr->print(F("RECHARGEABLE     : ")); serialPtr->println(bRechargable               );
-        serialPtr->print(F("CAPACITYMODE     : ")); serialPtr->println(bCapacityMode              );
-        serialPtr->print(F("CONFIGVOLTAGE    : ")); serialPtr->println(iConfigVoltage             );
-        serialPtr->print(F("VOLTAGE          : ")); serialPtr->println(iVoltage                   );
-        serialPtr->print(F("AUDIBLEALARMCTRL : ")); serialPtr->println(iAudibleAlarmCtrl          );
-        serialPtr->print(F("DESIGNCAPACITY   : ")); serialPtr->println(iDesignCapacity            );
-        serialPtr->print(F("FULLCHRGECAPACITY: ")); serialPtr->println(iFullChargeCapacity        );
+        //serialPtr->print(F("AVERAGETIME2FULL : ")); serialPtr->println(StoreEE.iAvgTimeToFull     );
+        //serialPtr->print(F("AVERAGETIME2EMPTY: ")); serialPtr->println(StoreEE.iAvgTimeToEmpty    );
+        //serialPtr->print(F("REMAINTIMELIMIT  : ")); serialPtr->println(StoreEE.iRemainTimeLimit   );
+        //serialPtr->print(F("DELAYBE4REBOOT   : ")); serialPtr->println(iDelayBe4Reboot            );
+        //serialPtr->print(F("DELAYBE4SHUTDOWN : ")); serialPtr->println(iDelayBe4ShutDown          );
+        //serialPtr->print(F("RECHARGEABLE     : ")); serialPtr->println(bRechargable               );
+        //serialPtr->print(F("CAPACITYMODE     : ")); serialPtr->println(bCapacityMode              );
+        //serialPtr->print(F("CONFIGVOLTAGE    : ")); serialPtr->println(iConfigVoltage             );
+        //serialPtr->print(F("VOLTAGE          : ")); serialPtr->println(iVoltage                   );
+        //serialPtr->print(F("AUDIBLEALARMCTRL : ")); serialPtr->println(iAudibleAlarmCtrl          );
+        //serialPtr->print(F("DESIGNCAPACITY   : ")); serialPtr->println(iDesignCapacity            );
+        //serialPtr->print(F("FULLCHRGECAPACITY: ")); serialPtr->println(iFullChargeCapacity        );
         serialPtr->print(F("REMAININGCAPACITY: ")); serialPtr->println(iRemaining                 );
-        serialPtr->print(F("WARNCAPACITYLIMIT: ")); serialPtr->println(StoreEE.iWarnCapacityLimit );
+        //serialPtr->print(F("WARNCAPACITYLIMIT: ")); serialPtr->println(StoreEE.iWarnCapacityLimit );
         serialPtr->print(F("REMNCAPACITYLIMIT: ")); serialPtr->println(StoreEE.iRemnCapacityLimit );
-        serialPtr->print(F("CPCTYGRANULARITY1: ")); serialPtr->println(bCapacityGranularity1      );
-        serialPtr->print(F("CPCTYGRANULARITY2: ")); serialPtr->println(bCapacityGranularity2      );
+        //serialPtr->print(F("CPCTYGRANULARITY1: ")); serialPtr->println(bCapacityGranularity1      );
+        //serialPtr->print(F("CPCTYGRANULARITY2: ")); serialPtr->println(bCapacityGranularity2      );
         //serialPtr->print(F("IDEVICECHEMISTRY : ")); serialPtr->println(STRING_DEVICECHEMISTRY );  // These are in flash
         //serialPtr->print(F("IOEMINFORMATION  : ")); serialPtr->println(STRING_OEMVENDOR       );
         serialPtr->print(F("batVoltage       : ")); serialPtr->println(batVoltage             );
         serialPtr->print(F("iPresentStatus   : 0x")); serialPtr->println(iPresentStatus, HEX  );
     }
-
+#endif
 
 void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
 {
