@@ -13,6 +13,45 @@
     Uncomment SERIAL1_DEBUG to enable Serial1 debugging messages (pins 0 & 1) hardware UART
 */
 
+/*****************************************************************
+Sid's To Do:
+    Determine Charge vs Discharge via voltage history
+    
+    Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
+    en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
+    to 100% so that the PC queries return good capacities and dont put PCs to sleep.
+
+    Config of UPS name/# (value is 2 or 3?)
+
+    Cmd to load default capacity settings for battery type and system voltage
+    Save "factory" defaults for capacity in EEPROM so they can be tweeked
+    without recompile?
+
+    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV)
+
+    Voltage to Capacity calculations:
+        Perhaps 4 voltage&Capacity points to better match voltage curves
+        One default set for each battery type
+
+    
+    Perhaps:
+        In PC mode (CDC Enabled), allow config cmds over Serial1 also
+            (handy for edge connector automation / Factory automated calibration)
+        Cmd to switch between internal or external AREF
+            (Put a 5k resistor in series with the pin to protect internal source)
+            Could instead/also short another pin to ground to indicate external (PCB version).
+        
+    Open Questions:
+        Are Charge and Discharge mutually exclusive, or can it be neither if no charging and no load?
+        Should we have a specific voltage: Above this V, assume charging.
+        How do we determine if we started charging, or a higher voltage is just
+            "bounch up" from the load being disconnected (or server died &no load)
+        
+
+
+
+*****************************************************************/
+
 //#include <HIDPowerDevice.h>
 #include "HIDPowerDevice.h"
 #include "TimerHelpers.h"
@@ -177,7 +216,48 @@ struct EEPROM_Struct
     uint16_t    eeVersion;  // Change this if the eeprom layout changes
 };
 
+#define EEPROM_BATVALID_PAT2  0x56
+#define EEPROM_BATEND_VER_SIG  0xA601
+struct EEPROM_BAT_Struct
+{
+    uint8_t     eeValid_1;      // EE is Valid_1: 0xAA
+    uint8_t     eeValid_2;      // EE is Valid_2  0x55
+
+
+    // Physical parameters
+    uint16_t iAvgTimeToFull  ;  // in seconds
+    uint16_t iAvgTimeToEmpty ;  // in seconds
+    uint16_t iRemainTimeLimit;  // in seconds
+    uint16_t batFullVoltage  ;  // in hundredths of volts
+    uint16_t batEmptyVoltage ;  // in hundredths of volts
+
+    // Parameters for ACPI compliancy
+    byte iWarnCapacityLimit;    // warning at 10%
+    byte reserved8_5;           // Offset the byte below
+    byte iRemnCapacityLimit;    // low at 5%
+    bool msgPcEnabled;
+
+    // Board/Resistor Divider Calibration
+    CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
+    CalibPoint  calibPointHigh;
+
+    uint16_t  reserved16_1;
+    uint16_t  reserved16_2;
+    uint16_t  reserved16_3;
+    uint16_t  reserved16_4;
+    uint8_t   reserved8_1;
+    uint8_t   reserved8_2;
+    uint8_t   reserved8_3;
+    uint8_t   reserved8_4;
+
+
+    uint8_t     debugFlags;  // Debug flags 0x01=Skip Early Audio
+    uint16_t    eeVersion;  // Change this if the eeprom layout changes
+};
+
 EEPROM_Struct StoreEE;
+EEPROM_BAT_Struct StoreBatEE;
+
 
 ////////////////////
 // P R O T O S
@@ -960,6 +1040,7 @@ void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
     showPersistentSettings(serialPtr, handleUsbOnlyOptions); // DBC.007
     serialPtr->println(F("HP - Show Parameters"));
     serialPtr->println(F("Z  - Restore Factory Defaults"));
+    serialPtr->println("Size of StoreEE: " + String(sizeof(StoreEE)));
 }
 
 
