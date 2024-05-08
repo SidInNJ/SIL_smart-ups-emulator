@@ -273,20 +273,20 @@ bool HID_::setup(USBSetup& setup)
                 }
 
 #if SERIAL1_IRQ_DEBUG
-                if (okToDoSet && ((sizeof(USBDebug) - strlen(USBDebug)) > 50)) { // Suppress the common HID_PD_REMNCAPACITYLIMIT problem
+                //if (okToDoSet && ((sizeof(USBDebug) - strlen(USBDebug)) > 50)) { // Suppress the common HID_PD_REMNCAPACITYLIMIT problem
+                if ( ((sizeof(USBDebug) - strlen(USBDebug)) > 50)) { // Suppress the common HID_PD_REMNCAPACITYLIMIT problem
                     // Below will look like: ## PC Setting 0x11 to 0x5b IGNORING ## (about 40 characters)
                     //sprintf(&USBDebug[strlen(USBDebug)], "## PC Setting 0x%x to 0x%x %s##\r\n", setup.wValueL, tValue, !okToDoSet ? "IGNORING " : "");  // SLR 2024-04-25 DOYET
                     char prNumTxt[6];
-
                     char prTxt[] = "## PC Setting 0x";
                     memcpy(&USBDebug[strlen(USBDebug)],prTxt, strlen(prTxt)+1);
                     toHexString(prNumTxt, setup.wValueL);
-                    memcpy(&USBDebug[strlen(USBDebug)],prTxt, strlen(prNumTxt)+1);
+                    memcpy(&USBDebug[strlen(USBDebug)],prNumTxt, strlen(prNumTxt)+1);
 
                     char prTxt2[] = " to 0x";
                     memcpy(&USBDebug[strlen(USBDebug)],prTxt2, strlen(prTxt2)+1);
                     toHexString(prNumTxt, tValue);
-                    memcpy(&USBDebug[strlen(USBDebug)],prTxt, strlen(prNumTxt)+1);
+                    memcpy(&USBDebug[strlen(USBDebug)],prNumTxt, strlen(prNumTxt)+1);
 
                     if (!okToDoSet)
                     {
@@ -294,7 +294,7 @@ bool HID_::setup(USBSetup& setup)
                         memcpy(&USBDebug[strlen(USBDebug)],prTxt3, strlen(prTxt3)+1);
                     }
 
-                    memcpy(&USBDebug[strlen(USBDebug)],"\n", strlen("\n")+1);
+                    memcpy(&USBDebug[strlen(USBDebug)],"\n\r", strlen("\n\r")+1);
 
 
                     //sprintf(USBDebug, "### setup.wValueL == HID_PD_REMNCAPACITYLIMIT, Ignoring ###\r\n");  // SLR 2024-04-25 DOYET

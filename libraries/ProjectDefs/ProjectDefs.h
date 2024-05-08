@@ -8,7 +8,7 @@
 #define SERIAL1_IRQ_DEBUG   true    // IRQ code prints via a buffer which gets printed in loop()
 //
 #if SERIAL1_IRQ_DEBUG
-    #define SIZE_USBDebug 256
+    #define SIZE_USBDebug 400
     extern char USBDebug[SIZE_USBDebug];          // DBC.009  SLR: Reduced size as RAM getting tight
 #endif
 

@@ -337,6 +337,10 @@ byte priorRemnCapacityLimit = 0;    // Will notifiy when StoreEE.iRemnCapacityLi
 
 void setup(void)
 {
+    char prTxt[] = ".ino setup() started.\n\r";
+    if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
+        memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
+
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
     while (!Serial1)
         delay(10);
@@ -559,6 +563,15 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
 
 void loop(void)
 {
+    static bool firstLoop = true;
+    if (firstLoop)
+    {
+        char prTxt[] = "First call of loop()\n\r";
+        if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
+            memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
+        firstLoop = false;
+    }
+
     WATCHDOG_RESET; // Reset watchdog frequently
 
     handleLaptopInput();

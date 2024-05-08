@@ -686,7 +686,7 @@ void toHexString(char str[], uint16_t num)
         if (rem <10)
             str[len - (i + 1)] = rem + '0';
         else
-            str[len - (i + 1)] = rem + 'A';
+            str[len - (i + 1)] = rem - 10 + 'A';
     }
     str[len] = '\0';
 }

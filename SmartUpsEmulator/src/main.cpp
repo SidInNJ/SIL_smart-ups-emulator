@@ -64,7 +64,12 @@ void readSwitch() {                                // DBC.009
 
 int main(void)
 {
-	readSwitch();                   // DBC.009
+    char prTxt[] = "main() called.\n\r";    // DEBUG DOYET
+
+    if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
+        memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
+
+    readSwitch();                   // DBC.009
 
 	init();
 
