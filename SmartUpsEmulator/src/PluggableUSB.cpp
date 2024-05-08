@@ -92,7 +92,11 @@ bool PluggableUSB_::plug(PluggableUSBModule *node)
 
       if (!USBCDCNeeded)                                                        // SLR 2024-04-19   
       {
-          Serial1.println(F("USBCDCNeeded NOT set before PluggableUSB_::plug"));   // SLR 2024-04-19
+         //DOYET Serial1.println(F("USBCDCNeeded NOT set before PluggableUSB_::plug"));   // SLR 2024-04-19
+#if SERIAL1_IRQ_DEBUG
+          char prTxt[] = "USBCDCNeeded NOT set before PluggableUSB_::plug\n\r";
+          memcpy(&USBDebug[strlen(USBDebug)],prTxt, strlen(prTxt));
+#endif
           USBCDCNeeded = true;                                                  // SLR 2024-04-19   
       }
 

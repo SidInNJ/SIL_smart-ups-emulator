@@ -183,6 +183,8 @@ bool isConfigEEPromMismatch(uint16_t addr, uint8_t *configPtr, uint16_t len);
 // Take the square root of the linear: 0 stays 0, max value stays max value, curve in between
 uint16_t squaredCurve(uint16_t newValLinear);
 uint32_t Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t white = 0);
+void toString(char str[], uint16_t num);
+void toHexString(char str[], uint16_t num);
 
 
 // Useful Defines

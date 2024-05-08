@@ -15,17 +15,21 @@
 
 /*****************************************************************
 Sid's To Do:
+    See if any sprintf's still being compiled. If so, removing reduce Flash usage?
+
     Determine Charge vs Discharge via voltage history
     
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
     to 100% so that the PC queries return good capacities and dont put PCs to sleep.
 
+    Seperate EEPROM area for     
+
     Config of UPS name/# (value is 2 or 3?)
 
     Cmd to load default capacity settings for battery type and system voltage
     Save "factory" defaults for capacity in EEPROM so they can be tweeked
-    without recompile?
+    without recompile? Put voltage calibration in same EEPROM section.
 
     Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV)
 
@@ -173,6 +177,28 @@ struct CalibPoint
 };
 
 
+struct VtoCapacity
+{
+    uint16_t voltage;     // in hundredths of volts
+    uint16_t capacity;
+};
+
+#define NUM_V_CALIB_POINTS  2   // A/D to Voltage Points for volt meter calibration
+#define NUM_CAPACITY_POINTS 4   // Points on discharge curve for interpolating capacity
+#define NUM_SYS_VOLTAGES    4   // 12, 24, 48V, and a spare/special (must be divisible by the lowest V, ie. 36V)
+#define NUM_BATT_TYPES      4   // Lead Acid, AGM, Lith Iron Phospate (LFP?)
+
+struct BatteryParams
+{
+    VtoCapacity VtoCapacities[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
+    uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacities[])
+    uint16_t    isChargingVolts;                        // in hundredths of volts: Above this v, must be charging
+    uint16_t    isDisChargingVolts;                     // " " ": Below this v, must be discharging
+    uint16_t voltage;     // in hundredths of volts
+};
+
+
+
 /////////////
 // General EEPROM
 //
@@ -202,6 +228,9 @@ struct EEPROM_Struct
     CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
     CalibPoint  calibPointHigh;
 
+    uint8_t   battType;
+    uint8_t   battSysVoltage;   // 1/2/3/4 for 12, 24, 48, other
+
     uint16_t  reserved16_1;
     uint16_t  reserved16_2;
     uint16_t  reserved16_3;
@@ -223,6 +252,7 @@ struct EEPROM_BAT_Struct
     uint8_t     eeValid_1;      // EE is Valid_1: 0xAA
     uint8_t     eeValid_2;      // EE is Valid_2  0x55
 
+    CalibPoint  CalibPoints[NUM_V_CALIB_POINTS];        // A/D to Voltage Points for volt meter calibration
 
     // Physical parameters
     uint16_t iAvgTimeToFull  ;  // in seconds
@@ -649,14 +679,18 @@ void loop(void)
 
         if (pcSetErrorCount)
         {
-            char outLine[60];
-            sprintf(outLine, "## PC Setting REMNCAPACITYLIMIT to 0x%x (Ignored)\r\n", pcSetValue);
-            pcSetErrorCount = 0;
-            pcSetValue      = 0;
-            SERIALPORT_PRINT(outLine);
+            SERIALPORT_PRINT(F("## PC Setting REMNCAPACITYLIMIT to 0x"))    ;
+            SERIALPORT_PRINT(pcSetValue, HEX);
+            SERIALPORT_PRINTLN(F(" (Ignored)"));
             
             if (USBCDCNeeded)
-                    Serial1.print(outLine); // Print to Serial1 if not already
+            {
+                Serial1.print(F("## PC Setting REMNCAPACITYLIMIT to 0x"));  // Could do this better memory wise! DOYET
+                Serial1.print(pcSetValue, HEX);
+                Serial1.println(F(" (Ignored)"));
+            }
+            pcSetErrorCount = 0;
+            pcSetValue      = 0;
         }
 
         if(USBCDCNeeded) 

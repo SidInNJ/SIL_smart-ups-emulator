@@ -646,6 +646,54 @@ uint8_t HandyHelpers::uint32sFromStringOfFields(const char *numString, uint32_t 
     return numsConverted;
 }
 
+// Convert an unsigned 16-bit integer to a string. Please provide a character array large enough for the result! 6 chars long should do it.
+void toString(char str[], uint16_t num)
+{
+    uint8_t  i, len = 0;
+    uint16_t rem, n;
+ 
+    n = num;
+    while (n != 0)
+    {
+        len++;
+        n /= 10;
+    }
+    for (i = 0; i < len; i++)
+    {
+        rem = num % 10;
+        num = num / 10;
+        str[len - (i + 1)] = rem + '0';
+    }
+    str[len] = '\0';
+}
+
+// Convert an unsigned 16-bit integer to a string. Please provide a character array large enough for the result! 5 chars long should do it.
+void toHexString(char str[], uint16_t num)
+{
+    uint8_t  i, len = 0;
+    uint16_t rem, n;
+ 
+    n = num;
+    while (n != 0)
+    {
+        len++;
+        n /= 16;
+    }
+    for (i = 0; i < len; i++)
+    {
+        rem = num % 16;
+        num = num / 16;
+        if (rem <10)
+            str[len - (i + 1)] = rem + '0';
+        else
+            str[len - (i + 1)] = rem + 'A';
+    }
+    str[len] = '\0';
+}
+
+
+
+#if (false)
 
 // Reduce color values so sum does not exceed maxIntensity
 uint32_t HandyHelpers::reduceToMaxIntensity(uint32_t proposedColor, uint16_t maxIntensity)
@@ -803,6 +851,8 @@ uint16_t squaredCurve(uint16_t newValLinear)
 
     return (uint16_t) newValSquared;
 }
+
+#endif // false
 
 /* This function places the current value of the heap and stack pointers in the
  * variables. You can call it from any place in your code and save the data for
