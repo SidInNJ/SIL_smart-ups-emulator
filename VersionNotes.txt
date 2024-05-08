@@ -1,8 +1,8 @@
 
-Version 2024-05-08 15:02:
+Version 2024-05-08 16:28:
 Removed calls to sprintf(). Fixed print in PluggableUSB_::plug.
 With SERIAL1_IRQ_DEBUG=true, Flash=25962 (2710 free), Available Memory: 851.
-
+(numbers before adding in more USBDebug prints for checking startup execution.
 
 Prior Version:
 Fixed unexplained PC shutdown. (Win10 driver bug?)
