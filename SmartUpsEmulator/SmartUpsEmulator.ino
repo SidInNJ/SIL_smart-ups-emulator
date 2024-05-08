@@ -23,7 +23,10 @@ Sid's To Do:
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
     to 100% so that the PC queries return good capacities and dont put PCs to sleep.
 
-    Seperate EEPROM area for     
+    So the user doesn't stomp on factory voltage meter calibration:
+        Seperate EEPROM area for A/D to voltage calibration,
+        and for default battery chemestries (allow for tweeking of default
+        battery discharge curves without having to recompile).
 
     Config of UPS name/# (value is 2 or 3?)
 
@@ -67,6 +70,22 @@ HandyHelpers MH; // My Handy Helper
 
 //#define MINUPDATEINTERVAL   26
 #define MINUPDATEINTERVAL   10
+
+//#define USE_EPAPER true
+#if USE_EPAPER
+    // Requires installing the Adafruit EPD library.
+    #include "Adafruit_EPD.h"
+    #include <Adafruit_GFX.h> // Core graphics library
+    #define EPD_DC 10
+    #define EPD_CS 9
+    #define EPD_BUSY 7 // can set to -1 to not use a pin (will wait a fixed delay)
+    #define SRAM_CS 6
+    #define EPD_RESET 8  // can set to -1 and share with microcontroller Reset!
+    #define EPD_SPI &SPI // primary SPI
+
+    /* Uncomment the following line if you are using 1.54" monochrome EPD */
+    Adafruit_SSD1608 display(200, 200, EPD_DC, EPD_RESET, EPD_CS, SRAM_CS, EPD_BUSY, EPD_SPI);
+#endif
 
 int iIntTimer = 0;
 bool SerialIsInitialized = false;
