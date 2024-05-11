@@ -14,3 +14,7 @@ SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_prl
 SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_pro
 SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_sch
 
+*.vpj
+*.vpw
+*.vpwhistxml
+*.vtg
