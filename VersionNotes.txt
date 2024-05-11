@@ -1,6 +1,11 @@
 
-Version 2024-05-08 16:28:
-Removed calls to sprintf(). Fixed print in PluggableUSB_::plug.
+Version 2024-05-10:
+Previously removed sprintf's, that freed some Prog memory.
+Added capacity tables for different battery chemistries. Prog mem: 93%
+Removed one "float", that freed up 1k of prog mem! Now 89% used.
+
+Previous:
+Removed calls to sprintf(). Save over 1k of flash.  Fixed print in PluggableUSB_::plug.
 With SERIAL1_IRQ_DEBUG=true, Flash=25962 (2710 free), Available Memory: 851.
 (numbers before adding in more USBDebug prints for checking startup execution.
 

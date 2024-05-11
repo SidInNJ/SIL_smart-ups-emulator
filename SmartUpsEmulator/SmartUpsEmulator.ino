@@ -15,20 +15,21 @@
 
 /*****************************************************************
 Sid's To Do:
-    See if any sprintf's still being compiled. If so, removing reduce Flash usage?
 
     Determine Charge vs Discharge via voltage history
     
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
     to 100% so that the PC queries return good capacities and dont put PCs to sleep.
+    OR: Print calculated capacities, but do NOT update what gets sent to the PC/NAS
+    while in config mode (let us verify calc's w/o PC shutdown).
 
     So the user doesn't stomp on factory voltage meter calibration:
         Seperate EEPROM area for A/D to voltage calibration,
         and for default battery chemestries (allow for tweeking of default
         battery discharge curves without having to recompile).
 
-    Config of UPS name/# (value is 2 or 3?)
+    Config of UPS name/# (value is 2 or 3?) <-- Need this?
 
     Cmd to load default capacity settings for battery type and system voltage
     Save "factory" defaults for capacity in EEPROM so they can be tweeked
@@ -187,19 +188,30 @@ struct VtoCapacity
     uint16_t capacity;
 };
 
-#define NUM_V_CALIB_POINTS  2   // A/D to Voltage Points for volt meter calibration
 #define NUM_CAPACITY_POINTS 4   // Points on discharge curve for interpolating capacity
 #define NUM_SYS_VOLTAGES    4   // 12, 24, 48V, and a spare/special (must be divisible by the lowest V, ie. 36V)
-#define NUM_BATT_TYPES      4   // Lead Acid, AGM, Lith Iron Phospate (LFP?)
+#define NUM_BATT_TYPES      5   // Lead Acid, AGM, Lith Iron Phospate (LFP?)
 
+// For all bat chemistries: Capacity curve, Definetely charging V, Discharging V
 struct BatteryParams
 {
     VtoCapacity VtoCapacities[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
     uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacities[])
+    uint16_t    batFullVoltage;                         // in hundredths of volts
+    uint16_t    batEmptyVoltage;                        // in hundredths of volts
     uint16_t    isChargingVolts;                        // in hundredths of volts: Above this v, must be charging
     uint16_t    isDisChargingVolts;                     // " " ": Below this v, must be discharging
-    uint16_t voltage;     // in hundredths of volts
 };
+
+enum BatteryChemistryType 
+{
+    BC_LeadAcid,
+    BC_LI_ION,
+    BC_LFP,
+    BC_AGM,
+    BC_Other
+};
+
 
 
 
@@ -214,26 +226,26 @@ struct EEPROM_Struct
     uint8_t     eeValid_1;      // EE is Valid_1: 0xAA
     uint8_t     eeValid_2;      // EE is Valid_2  0x55
 
-
-    // Physical parameters
-    uint16_t iAvgTimeToFull  ;  // in seconds
-    uint16_t iAvgTimeToEmpty ;  // in seconds
-    uint16_t iRemainTimeLimit;  // in seconds
-    uint16_t batFullVoltage  ;  // in hundredths of volts
-    uint16_t batEmptyVoltage ;  // in hundredths of volts
+    // Physical parameters - User System Specific
+    uint16_t              iAvgTimeToFull  ;     // in seconds
+    uint16_t              iAvgTimeToEmpty ;     // in seconds
+    uint16_t              iRemainTimeLimit;     // in seconds
+    BatteryChemistryType  BatChem;              // Lead Acid, LFP, AGM, Other
+    uint8_t               battSysVMultiplier;   // 1/2/3/4 for 12, 24, 36, 48 (V must be divisible by 12v)
 
     // Parameters for ACPI compliancy
     byte iWarnCapacityLimit;    // warning at 10%
     byte reserved8_5;           // Offset the byte below
     byte iRemnCapacityLimit;    // low at 5%
+
     bool msgPcEnabled;
 
     // Board/Resistor Divider Calibration
     CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
     CalibPoint  calibPointHigh;
 
-    uint8_t   battType;
-    uint8_t   battSysVoltage;   // 1/2/3/4 for 12, 24, 48, other
+    // Battery characteristics by chemistry.
+    BatteryParams   BattParams[NUM_BATT_TYPES];     // For all bat chemistries: Capacity curve, Definetely charging V, Discharging V
 
     uint16_t  reserved16_1;
     uint16_t  reserved16_2;
@@ -249,49 +261,8 @@ struct EEPROM_Struct
     uint16_t    eeVersion;  // Change this if the eeprom layout changes
 };
 
-#define EEPROM_BATVALID_PAT2  0x56
-#define EEPROM_BATEND_VER_SIG  0xA601
-struct EEPROM_BAT_Struct
-{
-    uint8_t     eeValid_1;      // EE is Valid_1: 0xAA
-    uint8_t     eeValid_2;      // EE is Valid_2  0x55
 
-    CalibPoint  CalibPoints[NUM_V_CALIB_POINTS];        // A/D to Voltage Points for volt meter calibration
-
-    // Physical parameters
-    uint16_t iAvgTimeToFull  ;  // in seconds
-    uint16_t iAvgTimeToEmpty ;  // in seconds
-    uint16_t iRemainTimeLimit;  // in seconds
-    uint16_t batFullVoltage  ;  // in hundredths of volts
-    uint16_t batEmptyVoltage ;  // in hundredths of volts
-
-    // Parameters for ACPI compliancy
-    byte iWarnCapacityLimit;    // warning at 10%
-    byte reserved8_5;           // Offset the byte below
-    byte iRemnCapacityLimit;    // low at 5%
-    bool msgPcEnabled;
-
-    // Board/Resistor Divider Calibration
-    CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
-    CalibPoint  calibPointHigh;
-
-    uint16_t  reserved16_1;
-    uint16_t  reserved16_2;
-    uint16_t  reserved16_3;
-    uint16_t  reserved16_4;
-    uint8_t   reserved8_1;
-    uint8_t   reserved8_2;
-    uint8_t   reserved8_3;
-    uint8_t   reserved8_4;
-
-
-    uint8_t     debugFlags;  // Debug flags 0x01=Skip Early Audio
-    uint16_t    eeVersion;  // Change this if the eeprom layout changes
-};
-
-EEPROM_Struct StoreEE;
-EEPROM_BAT_Struct StoreBatEE;
-
+EEPROM_Struct   StoreEE;        // User EEPROM & unchanging calibs. May restore from user or factory inmages in EEPROM.
 
 ////////////////////
 // P R O T O S
@@ -429,7 +400,7 @@ void setup(void)
     PowerDevice.setStringFeature(HID_PD_IDEVICECHEMISTRY, &bDeviceChemistry, STRING_DEVICECHEMISTRY );
     PowerDevice.setStringFeature(HID_PD_IOEMINFORMATION, &bOEMVendor,        STRING_OEMVENDOR       );
 
-    batVoltage = StoreEE.batFullVoltage;
+    batVoltage = StoreEE.BattParams[StoreEE.BatChem].batFullVoltage;
 
 #ifdef CDC_ENABLED
     if (USBCDCNeeded)
@@ -495,15 +466,10 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
     batVoltage = map(iA7, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
     if (batVoltage < 0) batVoltage = 0;
 
-    int iRemainingInt = map(batVoltage, StoreEE.batEmptyVoltage, StoreEE.batFullVoltage, 0, 100);
+    int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
     iRemaining = constrain(iRemainingInt, 0, 100);
-    //}
-    //else
-    //{
-    //    iRemaining = (byte)(round((float)100 * iA7 / 1024));
-    //}
 
-    iRunTimeToEmpty = (uint16_t)round((float)StoreEE.iAvgTimeToEmpty * iRemaining / 100);
+    iRunTimeToEmpty = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemaining / (uint32_t)100);
 
     // Charging
     if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
@@ -837,8 +803,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             {
                 switch ((char)toupper(userIn[1]))
                 {
-                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batFullVoltage , "Battery Full Charge V"); break;
-                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.batEmptyVoltage, "Battery Empty V"      ); break;
+                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage , "Battery Full Charge V"); break;
+                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, "Battery Empty V"      ); break;
                 default:
                     serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
@@ -1021,8 +987,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("Present Settings:"));
         serialPtr->print(F("ENn    - ENable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabled );
         serialPtr->print(F("         (0=No PC reporting/shutdown. 1=Enabled")); serialPtr->println( );
-        serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.batFullVoltage );
-        serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.batEmptyVoltage);
+        serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage );
+        serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage);
         serialPtr->print(F("TCnnnn - Average Time to fully Charge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToFull/60  );
         serialPtr->print(F("TDnnnn - Ave. Time for full Discharge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToEmpty/60 );
         serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100)   : ")); serialPtr->print(StoreEE.calibPointLow.voltage); serialPtr->println(F(" V*100"));
@@ -1106,12 +1072,63 @@ void FactoryDefault(void)
 
 
     // Physical parameters
-    StoreEE.iAvgTimeToFull   = 120*60;
-    StoreEE.iAvgTimeToEmpty  = 120*60;
-    StoreEE.iRemainTimeLimit =  10*60;
-    StoreEE.batFullVoltage   = 1380;   // Voltage in hundredths, Bat Full
-    //StoreEE.batEmptyVoltage  = 1150;   // Voltage in hundredths, Bat Empty
-    StoreEE.batEmptyVoltage  = 1000;   // Voltage in hundredths, Bat Empty       DOYET DEBUG
+    StoreEE.iAvgTimeToFull     = 120*60;
+    StoreEE.iAvgTimeToEmpty    = 120*60;
+    StoreEE.iRemainTimeLimit   =  10*60;
+
+    StoreEE.BatChem            = BC_AGM;
+    StoreEE.battSysVMultiplier = 1;     // 1:12V
+
+    // Lead-Acid
+    StoreEE.BattParams[BC_LeadAcid].batFullVoltage     = 1288;   // Voltage in hundredths (V*100), Bat Full
+    StoreEE.BattParams[BC_LeadAcid].batEmptyVoltage    = 1162;   // V*100, Bat Empty       
+    StoreEE.BattParams[BC_LeadAcid].isChargingVolts    = 1288;   // V*100, Above this, must be charging
+    StoreEE.BattParams[BC_LeadAcid].isDisChargingVolts = 1170;   // V*100, Below this, must be discharging
+    StoreEE.BattParams[BC_LeadAcid].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    // Voltages to Capacities mapping: AGM
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].voltage = 1162;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].voltage = 1170;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].voltage = 1278;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].voltage = 1288;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
+
+    // AGM
+    StoreEE.BattParams[BC_AGM].batFullVoltage     = 1380;   // Voltage in hundredths (V*100), Bat Full
+    StoreEE.BattParams[BC_AGM].batEmptyVoltage    = 1050;   // V*100, Bat Empty       
+    StoreEE.BattParams[BC_AGM].isChargingVolts    = 1280;   // V*100, Above this, must be charging
+    StoreEE.BattParams[BC_AGM].isDisChargingVolts = 1150;   // V*100, Below this, must be discharging
+    StoreEE.BattParams[BC_AGM].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    // Voltages to Capacities mapping: AGM
+    StoreEE.BattParams[BC_AGM].VtoCapacities[0].voltage = 1050;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_AGM].VtoCapacities[1].voltage = 1151;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_AGM].VtoCapacities[2].voltage = 1275;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_AGM].VtoCapacities[3].voltage = 1282;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
+
+    // LI_ION
+    StoreEE.BattParams[BC_LI_ION].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
+    StoreEE.BattParams[BC_LI_ION].batEmptyVoltage    = 1000;   // V*100, Bat Empty                        
+    StoreEE.BattParams[BC_LI_ION].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
+    StoreEE.BattParams[BC_LI_ION].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
+    StoreEE.BattParams[BC_LI_ION].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    // Voltages to Capacities mapping: LFP
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].voltage = 1280;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].voltage = 1360;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    // LFP
+    StoreEE.BattParams[BC_LFP].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
+    StoreEE.BattParams[BC_LFP].batEmptyVoltage    = 1000;   // V*100, Bat Empty                        
+    StoreEE.BattParams[BC_LFP].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
+    StoreEE.BattParams[BC_LFP].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
+    StoreEE.BattParams[BC_LFP].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    // Voltages to Capacities mapping: LFP
+    StoreEE.BattParams[BC_LFP].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LFP].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =   9;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacities[2].voltage = 1290;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacities[3].voltage = 1350;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    memcpy(&StoreEE.BattParams[BC_Other], &StoreEE.BattParams[BC_AGM], sizeof(StoreEE.BattParams[BC_AGM]));   // Init "Other" too
+
 
     StoreEE.calibPointLow.voltage   = 0;
     StoreEE.calibPointLow.a2dValue  = 0;
@@ -1124,6 +1141,7 @@ void FactoryDefault(void)
     StoreEE.msgPcEnabled = true;
 
     enableDebugPrints(StoreEE.debugFlags);
+
 
     Serial1.println(F("Restored factory defaults."));       // DOYET PUT BACK
 
