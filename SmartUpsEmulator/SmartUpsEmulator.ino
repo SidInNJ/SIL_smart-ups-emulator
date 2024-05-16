@@ -16,31 +16,32 @@
 /*****************************************************************
 Sid's To Do:
 
-    Determine Charge vs Discharge via voltage history
-    
+  Done: 
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
     to 100% so that the PC queries return good capacities and dont put PCs to sleep.
-    OR: Print calculated capacities, but do NOT update what gets sent to the PC/NAS
+    Print calculated capacities, but do NOT update what gets sent to the PC/NAS
     while in config mode (let us verify calc's w/o PC shutdown).
+    Default: Config mode: Disabled, Normal Run mode: Enabled.
 
-    So the user doesn't stomp on factory voltage meter calibration:
-        Seperate EEPROM area for A/D to voltage calibration,
-        and for default battery chemestries (allow for tweeking of default
-        battery discharge curves without having to recompile).
-
-    Config of UPS name/# (value is 2 or 3?) <-- Need this?
-
-    Cmd to load default capacity settings for battery type and system voltage
-    Save "factory" defaults for capacity in EEPROM so they can be tweeked
-    without recompile? Put voltage calibration in same EEPROM section.
-
-    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV)
+    At factory: 1st load EEPROM with compiled values. Then may adjust and save
+    A/D Voltage calibration and  tweeked curves to EEPROM with unpublished command ("ZSF")
+    User request of Load Factory Settings gets values from this part of EEPROM.
 
     Voltage to Capacity calculations:
-        Perhaps 4 voltage&Capacity points to better match voltage curves
+        4 voltage&Capacity points to better match voltage curves
         One default set for each battery type
 
+  Not Yet:
+
+    Determine Charge vs Discharge via voltage history
+
+    Add commands for changing battery parameters.
+    
+    Config of UPS name/# (value is 2 or 3?) <-- Need this?
+
+    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
+    and suppress other printouts.
     
     Perhaps:
         In PC mode (CDC Enabled), allow config cmds over Serial1 also
@@ -128,6 +129,7 @@ const byte bDeviceChemistry = IDEVICECHEMISTRY;
 const byte bOEMVendor = IOEMVENDOR;
 
 uint16_t iPresentStatus = 0, iPreviousStatus = 0;
+
 bool bForceShutdownPrior = false;
 
 byte bRechargable = 1;
@@ -153,6 +155,9 @@ bool bACPresent   = true;
 bool bDischarging = false; 
 
 byte iRemaining = 100, iPrevRemaining = 0;
+byte iRemainingInternal = 100;
+uint16_t iRunTimeToEmptyInternal = 7200;
+uint16_t iPresentStatusInternal = 0;
 
 int iRes = 0;
 
@@ -201,15 +206,17 @@ struct BatteryParams
     uint16_t    batEmptyVoltage;                        // in hundredths of volts
     uint16_t    isChargingVolts;                        // in hundredths of volts: Above this v, must be charging
     uint16_t    isDisChargingVolts;                     // " " ": Below this v, must be discharging
+    uint16_t    iCalcdTimeToEmpty;                      // Runtime calculated time to empty from full
+    uint8_t     timeToEmptyCalcState;                   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
 };
 
 enum BatteryChemistryType 
 {
-    BC_LeadAcid,
-    BC_LI_ION,
-    BC_LFP,
-    BC_AGM,
-    BC_Other
+    BC_LeadAcid = 0,
+    BC_LI_ION = 1,
+    BC_LFP = 2,
+    BC_AGM = 3,
+    BC_Other = 4
 };
 
 
@@ -238,7 +245,8 @@ struct EEPROM_Struct
     byte reserved8_5;           // Offset the byte below
     byte iRemnCapacityLimit;    // low at 5%
 
-    bool msgPcEnabled;
+    bool msgPcEnabledCfgMode;   // Host (PC/NAS) to be updated with real battery status in Config Mode
+    bool msgPcEnabledRunMode;   // ... in Normal Run mode (CDC Disabled)
 
     // Board/Resistor Divider Calibration
     CalibPoint  calibPointLow;  // Note A2D reading and associated voltage at two points. "map" from there
@@ -261,8 +269,10 @@ struct EEPROM_Struct
     uint16_t    eeVersion;  // Change this if the eeprom layout changes
 };
 
-
 EEPROM_Struct   StoreEE;        // User EEPROM & unchanging calibs. May restore from user or factory inmages in EEPROM.
+
+#define EEP_OFFSET_USER     0   // Starting address in EEPROM of normal user saved parameters
+#define EEP_OFFSET_FACTORY  256   // Starting address in EEPROM of "Factory Default" parameters
 
 ////////////////////
 // P R O T O S
@@ -321,20 +331,23 @@ void setup(void)
         delay(10);
 
     // New for GTIS
-    EEPROM.get(0, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
+    EEPROM.get(EEP_OFFSET_USER, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
 
     if ((StoreEE.eeValid_1 == EEPROM_VALID_PAT1) && (StoreEE.eeValid_2 == EEPROM_VALID_PAT2) && (StoreEE.eeVersion == EEPROM_END_VER_SIG)) // Signature Valid?
     {
-        enableDebugPrints(StoreEE.debugFlags);
         if(!USBCDCNeeded)
             Serial1.println(F("Good: EEPROM is initialized."));
     }
     else
     {
         if(!USBCDCNeeded)
-            Serial1.println(F("ERROR: Need to do configuration and write to EEPROM. Using Defaults."));
+            Serial1.println(F("EEPROM not init'd. Using Compiled Defaults."));
+        FactoryCompiledDefault();
+        EEPROM.put(EEP_OFFSET_FACTORY, StoreEE);    // Write to "Factory Default" EEPROM 
+        EEPROM.put(EEP_OFFSET_USER, StoreEE);       // Write to "User" EEPROM 
         FactoryDefault();
     }
+    enableDebugPrints(StoreEE.debugFlags);
 
     priorRemnCapacityLimit = StoreEE.iRemnCapacityLimit;    // Will notifiy when StoreEE.iRemnCapacityLimit changes
 
@@ -467,70 +480,109 @@ void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
     if (batVoltage < 0) batVoltage = 0;
 
     int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
-    iRemaining = constrain(iRemainingInt, 0, 100);
+    iRemainingInternal = constrain(iRemainingInt, 0, 100);
 
-    iRunTimeToEmpty = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemaining / (uint32_t)100);
+    iRunTimeToEmptyInternal = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemainingInternal / (uint32_t)100);
 
     // Charging
-    if (bCharging) bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
-    else bitClear(iPresentStatus, PRESENTSTATUS_CHARGING);
-    if (bACPresent) bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-    else bitClear(iPresentStatus, PRESENTSTATUS_ACPRESENT);
-    if (iRemaining == iFullChargeCapacity) bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
-    else bitClear(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+    if (bCharging) bitSet(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
+    if (bACPresent) bitSet(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
+    if (iRemainingInternal == iFullChargeCapacity) bitSet(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
 
     // Discharging
     if (bDischarging)
     {
-        bitSet(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-        // if(iRemaining < iRemnCapacityLimit) bitSet(iPresentStatus,PRESENTSTATUS_BELOWRCL);
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
+        // if(iRemainingInternal < iRemnCapacityLimit) bitSet(iPresentStatusInternal,PRESENTSTATUS_BELOWRCL);
 
-        if (iRunTimeToEmpty < StoreEE.iRemainTimeLimit)
+        if (iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit)
         {
             SERIALPORT_PRINT(F("Shutdown now! Rtte="));
-            SERIALPORT_PRINTLN(iRunTimeToEmpty);
+            SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
             SERIALPORT_Addr->flush();
-            delay(500);
+            //delay(500);
 
-            bitSet(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+            bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
         }
-        else bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+        else bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
 
     }
     else
     {
-        bitClear(iPresentStatus, PRESENTSTATUS_DISCHARGING);
-        bitClear(iPresentStatus, PRESENTSTATUS_RTLEXPIRED);
+        bitClear(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
+        bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
     }
 
     // Shutdown requested
     if (iDelayBe4ShutDown > 0)
     {
-        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
         DBPRINTLN(F("shutdown requested"));
     }
-    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
 
     //if (bForceShutdown)
     //{
-    //    bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNREQ);
+    //    bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
     //}
 
     // Shutdown imminent
-    if ((iPresentStatus & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
-        (iPresentStatus & (1 << PRESENTSTATUS_RTLEXPIRED)))
+    if ((iPresentStatusInternal & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
+        (iPresentStatusInternal & (1 << PRESENTSTATUS_RTLEXPIRED)))
     {
-        bitSet(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
         DBPRINTLN(F("shutdown imminent"));
     }
-    else bitClear(iPresentStatus, PRESENTSTATUS_SHUTDOWNIMNT);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
 
 
 
-    bitSet(iPresentStatus, PRESENTSTATUS_BATTPRESENT);
+    bitSet(iPresentStatusInternal, PRESENTSTATUS_BATTPRESENT);
 
 }
 
+
+// Print Remaining %, minutes:Seconds, Discharging Y/N, Status bits
+void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, bool bDischarging, uint16_t iPresentStatus)
+{
+    serialPtr->print(F("Batt Remaining = "));
+    serialPtr->print(iRemaining);
+    serialPtr->print(F("%, "));
+    serialPtr->print(iRunTimeToEmpty / 60);
+    serialPtr->print(F(":"));
+    serialPtr->print(iRunTimeToEmpty % 60);
+    serialPtr->print(F(", Discharging: "));
+    serialPtr->print(bDischarging ? "Y" : "N");
+    serialPtr->print(F(", Status = 0x"));
+    serialPtr->print(iPresentStatus, HEX);
+    const char *sptr = "";
+    for (uint8_t i = 0; i < 15; i++)
+    {
+        uint16_t b = 1 << i;
+        if (b & iPresentStatus)
+        {
+            switch (i)
+            {
+            case  PRESENTSTATUS_CHARGING    : sptr = " CHRG";  break;
+            case  PRESENTSTATUS_DISCHARGING : sptr = " DISCH";  break;
+            case  PRESENTSTATUS_ACPRESENT   : sptr = " AC";  break;
+            case  PRESENTSTATUS_RTLEXPIRED  : sptr = " RTLEXPIR";  break;
+            case  PRESENTSTATUS_FULLCHARGE  : sptr = " FULL";  break;
+            case  PRESENTSTATUS_SHUTDOWNREQ : sptr = " DwnSoon";  break;
+            case  PRESENTSTATUS_SHUTDOWNIMNT: sptr = " DwnNow";  break;
+            case  PRESENTSTATUS_BATTPRESENT : sptr = " BatPres";  break;
+            default  : sptr = " ??";  break;
+            }
+            serialPtr->print(sptr);
+        }
+    }
+    serialPtr->println();
+    serialPtr->flush();
+
+}
 void loop(void)
 {
     static bool firstLoop = true;
@@ -554,14 +606,47 @@ void loop(void)
 
         // If not enabled: Disable all updates. It seems like just suppressing the sending of reports to the PC isn't enough to 
         // keep the PC from shutting down when a low voltage is sensed. Interrupt driven something somewhere??
-        // Initially set to disabled to allow for the board to be callibrated, including a zero or low voltage.
-        if (StoreEE.msgPcEnabled)   
+        // Default: Disabled in config (CDC Needed) mode to allow for the board to be callibrated
+        // Enabled in normal run mode (CDC not needed) for comm with Synology NAS/PC host
+        //
+        //if (USBCDCNeeded ? StoreEE.msgPcEnabledCfgMode : StoreEE.msgPcEnabledRunMode)   // DOYET Try always sending, but change values being sent.
         {
-
-
             // Read battery, calc % charge, time remaining, status bits to set/clear
             UpdateBatteryStatus(bCharging, bACPresent, bDischarging);
 
+            if (USBCDCNeeded ? StoreEE.msgPcEnabledCfgMode : StoreEE.msgPcEnabledRunMode)
+            {
+                // We do want to report to the PC, use actual values
+                iRemaining      = iRemainingInternal;
+                iPresentStatus  = iPresentStatusInternal;
+                iRunTimeToEmpty = iRunTimeToEmptyInternal;
+            }
+            else
+            {
+                iRemaining = 100;   // Fake 100% remaining so we don't put PC to sleep
+                iPresentStatus = 0;
+                iRunTimeToEmpty = 120 * 60;
+                bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
+                bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+                iVoltage = StoreEE.BattParams[BC_LeadAcid].batFullVoltage * StoreEE.battSysVMultiplier;
+
+                static byte     prevRemainingInternal       = 100;
+                static uint16_t prevRunTimeToEmptyInternal  = 7200;
+                static uint16_t prevPresentStatusInternal   = 0;
+
+                if ((iPresentStatusInternal != prevPresentStatusInternal) || (iRemainingInternal != prevRemainingInternal) || (iRunTimeToEmptyInternal != prevRunTimeToEmptyInternal) || (iIntTimer > MINUPDATEINTERVAL))
+                {
+                    Stream *serialPtr = SERIALPORT_Addr;
+
+                    SERIALPORT_PRINT(F("# Sensed: "));
+
+                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, bDischarging, iPresentStatusInternal);     // Print Remaining minutes,
+
+                    prevPresentStatusInternal  = iPresentStatusInternal ;
+                    prevRunTimeToEmptyInternal = iRunTimeToEmptyInternal;
+                    prevRemainingInternal      = iRemainingInternal     ;
+                }
+            }
             ////************ Delay ****************************************
             //delay(1000);
             //iIntTimer++;
@@ -576,44 +661,38 @@ void loop(void)
 
             //************ Bulk send or interrupt ***********************
 
-            if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > MINUPDATEINTERVAL)
-               /* || (bForceShutdownPrior != bForceShutdown) */
-               )
+            if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > MINUPDATEINTERVAL))
             {
 
 #if SEND_UPDATE_RPTS
                 digitalWrite(PIN_LOGIC_TRIG, LOW); //  Trig on low going edge
 
                 //if (false)
-                //if (StoreEE.msgPcEnabled)
+                //if (StoreEE.msgPcEnabledCfgMode)
                 //{
-                    SERIALPORT_PRINT(F("Sending: Batt Remaining = "));
-                    SERIALPORT_PRINT(iRemaining);
-                    SERIALPORT_PRINT(F("%, "));
-                    SERIALPORT_PRINT(iRunTimeToEmpty / 60);
-                    SERIALPORT_PRINT(F(":"));
-                    SERIALPORT_PRINT(iRunTimeToEmpty % 60);
-                    SERIALPORT_PRINT(F(", Discharging: "));
-                    SERIALPORT_PRINT(bDischarging ? "Y" : "N");
-                    SERIALPORT_PRINT(F(", Status = 0x"));
-                    SERIALPORT_PRINTLN(iPresentStatus, HEX);
-                    SERIALPORT_Addr->flush();
 
-                    SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
+                //Stream *serialPtr = &Serial1;
+                Stream *serialPtr = SERIALPORT_Addr;
 
-                    iRes = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
+                SERIALPORT_PRINT(F("Sending: "));
+
+                printValues(serialPtr, iRemaining, iRunTimeToEmpty, bDischarging, iPresentStatus);     // Print Remaining minutes,
+
+                SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
+
+                iRes = PowerDevice.sendReport(HID_PD_REMAININGCAPACITY, &iRemaining, sizeof(iRemaining));
+                SERIALPORT_PRINT(iRes);
+                SERIALPORT_PRINT(",");
+
+                if (bDischarging)
+                {
+                    iRes = PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
                     SERIALPORT_PRINT(iRes);
                     SERIALPORT_PRINT(",");
-
-                    if (bDischarging)
-                    {
-                        iRes = PowerDevice.sendReport(HID_PD_RUNTIMETOEMPTY, &iRunTimeToEmpty, sizeof(iRunTimeToEmpty));
-                        SERIALPORT_PRINT(iRes);
-                        SERIALPORT_PRINT(",");
-                    }
-                    iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
-                    SERIALPORT_PRINTLN(iRes);
-                    //DBPRINTLN(F("Sent bat status to PC"));
+                }
+                iRes = PowerDevice.sendReport(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
+                SERIALPORT_PRINTLN(iRes);
+                //DBPRINTLN(F("Sent bat status to PC"));
                 //}
                 digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig'd on low going edge, back to high 
 #endif // SEND_UPDATE_RPTS
@@ -636,11 +715,11 @@ void loop(void)
                     status_HID = stat_Error;
 
             }//end of: did anything change?
-        }//end if (StoreEE.msgPcEnabled)
-        else
-        {
-            status_HID = stat_Disabled;
-        }
+        }//end if (StoreEE.msgPcEnabledCfgMode)
+        //else
+        //{
+        //    status_HID = stat_Disabled;
+        //}
 
 
         
@@ -788,13 +867,24 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         {
         case 'E':   // Battery Config
             {
-                switch ((char)toupper(userIn[1]))
+                bool goodCmd = false;
+                if (toupper(userIn[1]) == 'N')
                 {
-                case 'N': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 1, StoreEE.msgPcEnabled , "Enable PC Reporting/Shutdown"); break;
-                default:
-                    serialPtr->print(F("ERROR: Bad B (Battery) command: "));
+                    if (toupper(userIn[2]) == 'C')
+                    {
+                        MH.updateFromUserInput(userIn+2, indexUserIn, inByte, 1, StoreEE.msgPcEnabledCfgMode , F("Run (Normal) Mode: Enable PC Reporting/Shutdown")); 
+                        goodCmd = true;
+                    }
+                    else if (toupper(userIn[2]) == 'R')
+                    {
+                        MH.updateFromUserInput(userIn+2, indexUserIn, inByte, 1, StoreEE.msgPcEnabledRunMode , F("Config Mode: Enable PC Reporting/Shutdown")); 
+                        goodCmd = true;
+                    }
+                }
+                if (!goodCmd)
+                {
+                    serialPtr->print(F("ERROR: Bad ENable command command: "));
                     serialPtr->println(userIn);
-                    break;
                 }
             }
             break;
@@ -803,8 +893,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             {
                 switch ((char)toupper(userIn[1]))
                 {
-                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage , "Battery Full Charge V"); break;
-                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, "Battery Empty V"      ); break;
+                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage , F("Battery Full Charge V")); break;
+                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, F("Battery Empty V"      )); break;
                 default:
                     serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
@@ -820,7 +910,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'C': 
                     {
                         uint16_t minsTemp = StoreEE.iAvgTimeToFull / 60;
-                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, "Minutes to fully charge from dead"   ); 
+                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, F("Minutes to fully charge from dead"   )); 
                         StoreEE.iAvgTimeToFull = minsTemp * 60;
                     }
                     break;
@@ -828,7 +918,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'D': 
                     {
                         uint16_t minsTemp = StoreEE.iAvgTimeToEmpty / 60;
-                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, "Minutes to fully discharge from full"); 
+                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, F("Minutes to fully discharge from full")); 
                         StoreEE.iAvgTimeToEmpty = minsTemp * 60;
                     }
                     break;
@@ -848,7 +938,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'L': 
                     {
                         uint16_t valVin100s = StoreEE.calibPointLow.voltage;
-                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of low voltage"   ))
+                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of low voltage")   ))
                         {
                             StoreEE.calibPointLow.voltage = valVin100s;
                             StoreEE.calibPointLow.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
@@ -858,7 +948,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'H':
                     {
                         uint16_t valVin100s = StoreEE.calibPointHigh.voltage;
-                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , "V*100 of higher voltage"))
+                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of higher voltage")))
                         {
                             StoreEE.calibPointHigh.voltage = valVin100s;
                             StoreEE.calibPointHigh.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
@@ -899,15 +989,35 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
         case 'S':
             {
-                EEPROM.put(0, StoreEE);     // Write to EEPROM at users command
+                EEPROM.put(EEP_OFFSET_USER, StoreEE);     // Write to EEPROM at users command
                 serialPtr->println(F("\nSaved new value(s) to EEPROM.\n"));
             }
             break;
 
         case 'Z':
             {
-                FactoryDefault();       // Reset color and air pump settings
-                serialPtr->println(F("\nRestored Factory Defaults...\r\n Must do 'S' to save to EEPROM (non-volatile memory)."));
+                if (toupper(userIn[1]) == 'C')
+                {
+                    if (toupper(userIn[2]) == 'D')
+                    {
+                        serialPtr->println(F("\nRestored Compiled Factory Defaults!"));
+                        FactoryCompiledDefault();
+                    }
+                }
+                else if (toupper(userIn[1]) == 'S')
+                {
+                    if (toupper(userIn[2]) == 'F')
+                    {
+                        EEPROM.put(EEP_OFFSET_FACTORY, StoreEE);     // Write to "Factory Default" EEPROM 
+                        serialPtr->println(F("\nSaved new value(s) to Factory Default\n"));
+                    }
+                }
+                else
+                {
+
+                    FactoryDefault();       // Reset color and air pump settings
+                    serialPtr->println(F("\nRestored Factory Defaults...\r\n Must do 'S' to save to EEPROM (non-volatile memory)."));
+                }
                 enableDebugPrints(StoreEE.debugFlags);  // Update the debug printing
             }
             break;
@@ -925,7 +1035,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 
         case 'D':
             {
-                MH.updateFromUserInput(userIn, indexUserIn, inByte, 0xFF, StoreEE.debugFlags, "Debug Flags (1:Main)", true);
+                MH.updateFromUserInput(userIn, indexUserIn, inByte, 0xFF, StoreEE.debugFlags, F("Debug Flags (1:Main)"), true);
                 enableDebugPrints(StoreEE.debugFlags);  // Update the debug printing
             }
             break;  // Expects Hex string
@@ -985,8 +1095,10 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println();
 
         serialPtr->println(F("Present Settings:"));
-        serialPtr->print(F("ENn    - ENable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabled );
-        serialPtr->print(F("         (0=No PC reporting/shutdown. 1=Enabled")); serialPtr->println( );
+        serialPtr->print(F("Enable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
+        serialPtr->print(F("ENCn   - While in Config mode                  : ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
+        serialPtr->print(F("ENRn   - While in Normal run mode              : ")); serialPtr->println(StoreEE.msgPcEnabledRunMode );
+        serialPtr->print(F("         (0=No PC reporting/shutdown. 1=Enabled)\r\n"));
         serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage );
         serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage);
         serialPtr->print(F("TCnnnn - Average Time to fully Charge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToFull/60  );
@@ -1005,6 +1117,9 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("  (If you measured 12.45 volts, enter CH1245)"));
         serialPtr->println(F("  Voltages will always be entered in hundredths. "));
         serialPtr->println(F("  (V*100)"));
+        serialPtr->println(F("Z   - Restore factory defaults"));
+        serialPtr->println(F("ZCD - Restore compiled factory defaults"));
+        //serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
 
         serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         serialPtr->print(F("Battery Voltage*100: ")); serialPtr->println(batVoltage);
@@ -1063,6 +1178,11 @@ void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
 
 void FactoryDefault(void)
 {
+    EEPROM.get(EEP_OFFSET_FACTORY, StoreEE); // Fetch our structure of non-volitale vars from "Factory Default" EEPROM
+}
+
+void FactoryCompiledDefault(void)
+{
     //StoreEE.debugFlags        =  0;  // No debug prints by default  // DBC.007
     StoreEE.debugFlags        =  0;  // Debug prints by default       // DBC.007
     StoreEE.eeValid_1         = EEPROM_VALID_PAT1;      // Set sig in case user stores config to EEPROM.
@@ -1080,11 +1200,13 @@ void FactoryDefault(void)
     StoreEE.battSysVMultiplier = 1;     // 1:12V
 
     // Lead-Acid
-    StoreEE.BattParams[BC_LeadAcid].batFullVoltage     = 1288;   // Voltage in hundredths (V*100), Bat Full
-    StoreEE.BattParams[BC_LeadAcid].batEmptyVoltage    = 1162;   // V*100, Bat Empty       
-    StoreEE.BattParams[BC_LeadAcid].isChargingVolts    = 1288;   // V*100, Above this, must be charging
-    StoreEE.BattParams[BC_LeadAcid].isDisChargingVolts = 1170;   // V*100, Below this, must be discharging
-    StoreEE.BattParams[BC_LeadAcid].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    StoreEE.BattParams[BC_LeadAcid].batFullVoltage     = 1288;  // Voltage in hundredths (V*100), Bat Full
+    StoreEE.BattParams[BC_LeadAcid].batEmptyVoltage    = 1162;  // V*100, Bat Empty       
+    StoreEE.BattParams[BC_LeadAcid].isChargingVolts    = 1288;  // V*100, Above this, must be charging
+    StoreEE.BattParams[BC_LeadAcid].isDisChargingVolts = 1170;  // V*100, Below this, must be discharging
+    StoreEE.BattParams[BC_LeadAcid].numCapacityPointsUsed = NUM_CAPACITY_POINTS;    // # of points in voltage/capacity curve
+    StoreEE.BattParams[BC_LeadAcid].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
+    StoreEE.BattParams[BC_LeadAcid].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: AGM
     StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].voltage = 1162;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
     StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].voltage = 1170;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
@@ -1097,6 +1219,8 @@ void FactoryDefault(void)
     StoreEE.BattParams[BC_AGM].isChargingVolts    = 1280;   // V*100, Above this, must be charging
     StoreEE.BattParams[BC_AGM].isDisChargingVolts = 1150;   // V*100, Below this, must be discharging
     StoreEE.BattParams[BC_AGM].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    StoreEE.BattParams[BC_AGM].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
+    StoreEE.BattParams[BC_AGM].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: AGM
     StoreEE.BattParams[BC_AGM].VtoCapacities[0].voltage = 1050;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
     StoreEE.BattParams[BC_AGM].VtoCapacities[1].voltage = 1151;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
@@ -1109,6 +1233,8 @@ void FactoryDefault(void)
     StoreEE.BattParams[BC_LI_ION].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
     StoreEE.BattParams[BC_LI_ION].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
     StoreEE.BattParams[BC_LI_ION].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    StoreEE.BattParams[BC_LI_ION].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
+    StoreEE.BattParams[BC_LI_ION].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: LFP
     StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
     StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
@@ -1121,6 +1247,8 @@ void FactoryDefault(void)
     StoreEE.BattParams[BC_LFP].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
     StoreEE.BattParams[BC_LFP].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
     StoreEE.BattParams[BC_LFP].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    StoreEE.BattParams[BC_LFP].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
+    StoreEE.BattParams[BC_LFP].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: LFP
     StoreEE.BattParams[BC_LFP].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
     StoreEE.BattParams[BC_LFP].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =   9;   // 
@@ -1138,7 +1266,8 @@ void FactoryDefault(void)
     // Parameters for ACPI compliancy
     StoreEE.iWarnCapacityLimit = 10; // warning at 10%
     StoreEE.iRemnCapacityLimit = 5; // low at 5%
-    StoreEE.msgPcEnabled = true;
+    StoreEE.msgPcEnabledCfgMode = false;
+    StoreEE.msgPcEnabledRunMode = true;
 
     enableDebugPrints(StoreEE.debugFlags);
 

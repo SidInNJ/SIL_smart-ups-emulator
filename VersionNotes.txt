@@ -1,28 +1,43 @@
+Version 2024-05-16:
+  Config: Cmd to turn en/dis telling PC to shut off while doing calibration,               
+  en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
+  to 100% so that the PC queries return good capacities and dont put PCs to sleep.         
+  Print calculated capacities, but do NOT update what gets sent to the PC/NAS              
+  while in config mode (let us verify calc's w/o PC shutdown).                             
+  Default: Config mode: Disabled, Normal Run mode: Enabled.                                
+                                                                                           
+  At factory: 1st load EEPROM with compiled values. Then may adjust and save               
+  A/D Voltage calibration and  tweeked curves to EEPROM with unpublished command ("ZSF")   
+  User request of Load Factory Settings gets values from this part of EEPROM.              
+                                                                                           
+  Voltage to Capacity calculations:                                                        
+      4 voltage&Capacity points to better match voltage curves                             
+      One default set for each battery type                                                
 
 Version 2024-05-10:
-Previously removed sprintf's, that freed some Prog memory.
-Added capacity tables for different battery chemistries. Prog mem: 93%
-Removed one "float", that freed up 1k of prog mem! Now 89% used.
+  Previously removed sprintf's, that freed some Prog memory.
+  Added capacity tables for different battery chemistries. Prog mem: 93%
+  Removed one "float", that freed up 1k of prog mem! Now 89% used.
 
 Previous:
-Removed calls to sprintf(). Save over 1k of flash.  Fixed print in PluggableUSB_::plug.
-With SERIAL1_IRQ_DEBUG=true, Flash=25962 (2710 free), Available Memory: 851.
-(numbers before adding in more USBDebug prints for checking startup execution.
+  Removed calls to sprintf(). Save over 1k of flash.  Fixed print in PluggableUSB_::plug.
+  With SERIAL1_IRQ_DEBUG=true, Flash=25962 (2710 free), Available Memory: 851.
+  (numbers before adding in more USBDebug prints for checking startup execution.
 
 Prior Version:
-Fixed unexplained PC shutdown. (Win10 driver bug?)
-It appears that the Win10 UPS driver will occasionally sent whatever 
-the present HID_PD_REMAININGCAPACITY is to the HID_PD_REMNCAPACITYLIMIT; sending it 
-to the Leonardo. We now report when that problem happens, but ignore the setting.
-Also moved many strings (for printouts) to flash: F(""), freeing up RAM.
-Added projected.h which now holds SERIAL1_DEBUG and related.
-
-I tested with Ubuntu on a laptop, and in CDC Enabled mode, it did not show up,
-but in CDC Disabled mode it did show up. Ubuntu never seemed to send the
-HID_PD_REMNCAPACITYLIMIT setting to the Leo (yay), but my debug prints indicate
-that the Leo is not successfully sending the PowerDevice.sendReport's.
-These printed out to Serial1:
-     Sending: Batt Remaining = 88%, 105:36, Discharging: N, Status = 0x8
-     Comms with PC (neg=bad): -1,-1
-Ubuntu continued to show the initial Leo "battery" capacity, and it never 
-updated. On Win10 it did eventually update.
+  Fixed unexplained PC shutdown. (Win10 driver bug?)
+  It appears that the Win10 UPS driver will occasionally sent whatever 
+  the present HID_PD_REMAININGCAPACITY is to the HID_PD_REMNCAPACITYLIMIT; sending it 
+  to the Leonardo. We now report when that problem happens, but ignore the setting.
+  Also moved many strings (for printouts) to flash: F(""), freeing up RAM.
+  Added projected.h which now holds SERIAL1_DEBUG and related.
+  
+  I tested with Ubuntu on a laptop, and in CDC Enabled mode, it did not show up,
+  but in CDC Disabled mode it did show up. Ubuntu never seemed to send the
+  HID_PD_REMNCAPACITYLIMIT setting to the Leo (yay), but my debug prints indicate
+  that the Leo is not successfully sending the PowerDevice.sendReport's.
+  These printed out to Serial1:
+       Sending: Batt Remaining = 88%, 105:36, Discharging: N, Status = 0x8
+       Comms with PC (neg=bad): -1,-1
+  Ubuntu continued to show the initial Leo "battery" capacity, and it never 
+  updated. On Win10 it did eventually update.
