@@ -14,7 +14,15 @@
 */
 
 /*****************************************************************
+Design Notes:
+    Internally, will treat all systems as a 12v sytem. When set for a 24 or
+    48v system, will multiply appropriately for voltage display. User entered
+    voltages will be divided down to 12v system values.
+
 Sid's To Do:
+
+## Hysteresis for updating % and Time remaining too.
+##
 
   Done: 
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
@@ -55,9 +63,28 @@ Sid's To Do:
         Should we have a specific voltage: Above this V, assume charging.
         How do we determine if we started charging, or a higher voltage is just
             "bounch up" from the load being disconnected (or server died &no load)
+
+        Battery Questions:
+            LFP batteries have an extreemly flat voltage-capacity curve (0.1v/10% capacity).
+
+            Do we already have some good discharge curves by battery type and full-discharge time?
+
+            How constant are the loads (HD active vs no recent read/writes)
+            
+            Do we need to do an at-site V-Capacity calibration?
+                User enters how long until empty. Start recording voltages at full charge,
+                record every 10% of discharge time until down to at least 50%,
+                extrapolate the rest of the curve and store.
         
+        Better ways to determine remaining capacity via voltage?
 
+        Large/Small of battery types
+        See table in half pint manual
 
+        Per Paul:
+            Generic shutdown voltage if we don't know battery chemistry: 12.3V
+            Hopefully only need to asK: Chemestry, Nominal (system) voltage (12/24/48),
+                backup time (from full to empty in minutes)
 
 *****************************************************************/
 
@@ -216,7 +243,8 @@ enum BatteryChemistryType
     BC_LI_ION = 1,
     BC_LFP = 2,
     BC_AGM = 3,
-    BC_Other = 4
+    BC_Other = 4,
+    BC_Last = BC_Other
 };
 
 
@@ -306,6 +334,7 @@ Status_HID_Comm status_HID = stat_Disabled;
 //Stream *serPtr = SERIALPORT_Addr;  // DBC.007
 Stream *serPtr = SERIALPORT_Addr;
 int batVoltage = 1300;
+int batVoltageInternal = 1300;
 
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
@@ -383,8 +412,9 @@ void setup(void)
     bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
     bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
 
-    bCharging = digitalRead(PIN_INPUT_PWR_FAIL);             
-    bACPresent = bCharging;    // TODO - replace with sensor 
+    bCharging = true;
+    //digitalRead(PIN_INPUT_PWR_FAIL);
+    bACPresent = bCharging;    // TODO - replace with sensor
     bDischarging = !bCharging; // TODO - replace with sensor     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
 
     // Read battery, calc % charge, time remaining, status bits to set/clear
@@ -433,7 +463,7 @@ void setup(void)
     Serial1.flush();
 
     // Initially say all is well and avoid PC shutdown on first plug-in.
-    bool bCharging = true;
+    bCharging = true;
     bDischarging = !bCharging; // TODO - replace with sensor
     //
     // Send initial report with everything looking good, update in main loop4
@@ -469,120 +499,6 @@ void setup(void)
 
 Timer_ms timeToUpdate;
 
-
-void UpdateBatteryStatus(bool bCharging, bool bACPresent, bool bDischarging)
-{
-    int iA7 = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
-
-    //if (true)
-    //{
-    batVoltage = map(iA7, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
-    if (batVoltage < 0) batVoltage = 0;
-
-    int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
-    iRemainingInternal = constrain(iRemainingInt, 0, 100);
-
-    iRunTimeToEmptyInternal = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemainingInternal / (uint32_t)100);
-
-    // Charging
-    if (bCharging) bitSet(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
-    else bitClear(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
-    if (bACPresent) bitSet(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
-    else bitClear(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
-    if (iRemainingInternal == iFullChargeCapacity) bitSet(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
-    else bitClear(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
-
-    // Discharging
-    if (bDischarging)
-    {
-        bitSet(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
-        // if(iRemainingInternal < iRemnCapacityLimit) bitSet(iPresentStatusInternal,PRESENTSTATUS_BELOWRCL);
-
-        if (iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit)
-        {
-            SERIALPORT_PRINT(F("Shutdown now! Rtte="));
-            SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
-            SERIALPORT_Addr->flush();
-            //delay(500);
-
-            bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
-        }
-        else bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
-
-    }
-    else
-    {
-        bitClear(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
-        bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
-    }
-
-    // Shutdown requested
-    if (iDelayBe4ShutDown > 0)
-    {
-        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
-        DBPRINTLN(F("shutdown requested"));
-    }
-    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
-
-    //if (bForceShutdown)
-    //{
-    //    bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
-    //}
-
-    // Shutdown imminent
-    if ((iPresentStatusInternal & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
-        (iPresentStatusInternal & (1 << PRESENTSTATUS_RTLEXPIRED)))
-    {
-        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
-        DBPRINTLN(F("shutdown imminent"));
-    }
-    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
-
-
-
-    bitSet(iPresentStatusInternal, PRESENTSTATUS_BATTPRESENT);
-
-}
-
-
-// Print Remaining %, minutes:Seconds, Discharging Y/N, Status bits
-void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, bool bDischarging, uint16_t iPresentStatus)
-{
-    serialPtr->print(F("Batt Remaining = "));
-    serialPtr->print(iRemaining);
-    serialPtr->print(F("%, "));
-    serialPtr->print(iRunTimeToEmpty / 60);
-    serialPtr->print(F(":"));
-    serialPtr->print(iRunTimeToEmpty % 60);
-    serialPtr->print(F(", Discharging: "));
-    serialPtr->print(bDischarging ? "Y" : "N");
-    serialPtr->print(F(", Status = 0x"));
-    serialPtr->print(iPresentStatus, HEX);
-    const char *sptr = "";
-    for (uint8_t i = 0; i < 15; i++)
-    {
-        uint16_t b = 1 << i;
-        if (b & iPresentStatus)
-        {
-            switch (i)
-            {
-            case  PRESENTSTATUS_CHARGING    : sptr = " CHRG";  break;
-            case  PRESENTSTATUS_DISCHARGING : sptr = " DISCH";  break;
-            case  PRESENTSTATUS_ACPRESENT   : sptr = " AC";  break;
-            case  PRESENTSTATUS_RTLEXPIRED  : sptr = " RTLEXPIR";  break;
-            case  PRESENTSTATUS_FULLCHARGE  : sptr = " FULL";  break;
-            case  PRESENTSTATUS_SHUTDOWNREQ : sptr = " DwnSoon";  break;
-            case  PRESENTSTATUS_SHUTDOWNIMNT: sptr = " DwnNow";  break;
-            case  PRESENTSTATUS_BATTPRESENT : sptr = " BatPres";  break;
-            default  : sptr = " ??";  break;
-            }
-            serialPtr->print(sptr);
-        }
-    }
-    serialPtr->println();
-    serialPtr->flush();
-
-}
 void loop(void)
 {
     static bool firstLoop = true;
@@ -640,7 +556,7 @@ void loop(void)
 
                     SERIALPORT_PRINT(F("# Sensed: "));
 
-                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, bDischarging, iPresentStatusInternal);     // Print Remaining minutes,
+                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, bDischarging, iPresentStatusInternal);     // Print Remaining minutes,
 
                     prevPresentStatusInternal  = iPresentStatusInternal ;
                     prevRunTimeToEmptyInternal = iRunTimeToEmptyInternal;
@@ -676,7 +592,7 @@ void loop(void)
 
                 SERIALPORT_PRINT(F("Sending: "));
 
-                printValues(serialPtr, iRemaining, iRunTimeToEmpty, bDischarging, iPresentStatus);     // Print Remaining minutes,
+                printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage, bDischarging, iPresentStatus);     // Print Remaining minutes,
 
                 SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
 
@@ -797,6 +713,168 @@ void loop(void)
 
 }
 
+#define TREND_HYSTERYSIS_V 8
+void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
+{
+    static int16_t recentVoltage = 0;
+    static bool firstPass = true;
+    static bool chargingTrend  = false;
+
+
+
+    // DOYET Replace:
+    // Do noise resistant reading of battery voltage
+    int anaValue = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
+
+    //if (true)
+    //{
+    batVoltageInternal = map(anaValue, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
+    if (batVoltageInternal < 0) batVoltageInternal = 0;
+
+    // Determine if charging or discharging:
+    // Save a "Recent" voltage. Whenever a reading is more than the hysterysis value different 
+    // from the Recent voltage, update the Recent voltage and note if the latest is lower (discharging)
+    // or higher (charging).
+    // If the latest reading is higher the the isChargingVolts value, say we're charging no matter what.
+    // If the latest reading is lower the the isDisChargingVolts value, say we're discharging no matter what.
+    // 
+    if (firstPass)
+    {
+        recentVoltage = batVoltageInternal;
+        batVoltage = batVoltageInternal;
+        firstPass = false;
+    }
+
+    bool chargingTrendTemp = batVoltageInternal > recentVoltage ;
+
+    if (ABS(recentVoltage - batVoltageInternal) > TREND_HYSTERYSIS_V)
+    {
+        chargingTrend = chargingTrendTemp;
+        recentVoltage = batVoltageInternal;
+        batVoltage = batVoltageInternal;    // batVoltage gets reported externally
+    }
+
+    if (batVoltageInternal > (int16_t)StoreEE.BattParams[StoreEE.BatChem].isChargingVolts)
+        chargingTrend = true;
+    else if ((batVoltageInternal < (int16_t)StoreEE.BattParams[StoreEE.BatChem].isDisChargingVolts))
+        chargingTrend = false;
+
+    bACPresent = bCharging = chargingTrend;
+    bDischarging = !bCharging;
+
+    // For determining remaining capacity, we may need different charging and discharging curves.
+    // The voltages read will probably be pushed down more if discharging faster.
+    // 
+    // 
+    int iRemainingInt = map(batVoltageInternal, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
+    iRemainingInternal = constrain(iRemainingInt, 0, 100);
+
+    iRunTimeToEmptyInternal = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemainingInternal / (uint32_t)100);
+
+    // Charging
+    if (bCharging) bitSet(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_CHARGING);
+    if (bACPresent) bitSet(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_ACPRESENT);
+    if (iRemainingInternal == iFullChargeCapacity) bitSet(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_FULLCHARGE);
+
+    // Discharging
+    if (bDischarging)
+    {
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
+        // if(iRemainingInternal < iRemnCapacityLimit) bitSet(iPresentStatusInternal,PRESENTSTATUS_BELOWRCL);
+
+        if (iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit)
+        {
+            SERIALPORT_PRINT(F("Shutdown now! Rtte="));
+            SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
+            SERIALPORT_Addr->flush();
+            //delay(500);
+
+            bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
+        }
+        else bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
+
+    }
+    else
+    {
+        bitClear(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
+        bitClear(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
+    }
+
+    // Shutdown requested
+    if (iDelayBe4ShutDown > 0)
+    {
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
+        DBPRINTLN(F("shutdown requested"));
+    }
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
+
+    //if (bForceShutdown)
+    //{
+    //    bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNREQ);
+    //}
+
+    // Shutdown imminent
+    if ((iPresentStatusInternal & (1 << PRESENTSTATUS_SHUTDOWNREQ)) ||
+        (iPresentStatusInternal & (1 << PRESENTSTATUS_RTLEXPIRED)))
+    {
+        bitSet(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
+        DBPRINTLN(F("shutdown imminent"));
+    }
+    else bitClear(iPresentStatusInternal, PRESENTSTATUS_SHUTDOWNIMNT);
+
+
+
+    bitSet(iPresentStatusInternal, PRESENTSTATUS_BATTPRESENT);
+
+}
+
+
+// Print Remaining %, minutes:Seconds, Discharging Y/N, Status bits
+void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, uint16_t batV, bool bDischarging, uint16_t iPresentStatus)
+{
+    serialPtr->print(F("Batt Remaining = "));
+    serialPtr->print(iRemaining);
+    serialPtr->print(F("%, "));
+    serialPtr->print(iRunTimeToEmpty / 60);
+    serialPtr->print(F(":"));
+    serialPtr->print(iRunTimeToEmpty % 60);
+    serialPtr->print(F(", BatV Internal: "));    // DEBUG Remove these 2 lines eventually
+    serialPtr->print(batVoltageInternal);       // DEBUG Remove these 2 lines 
+    serialPtr->print(F(", BatV: "));
+    serialPtr->print(batV);
+    //serialPtr->print(F(", Discharging: "));
+    //serialPtr->print(bDischarging ? "Y" : "N");
+    serialPtr->print(F(", Status = 0x"));
+    serialPtr->print(iPresentStatus, HEX);
+    const char *sptr = "";
+    for (uint8_t i = 0; i < 15; i++)
+    {
+        uint16_t b = 1 << i;
+        if (b & iPresentStatus)
+        {
+            switch (i)
+            {
+            case  PRESENTSTATUS_CHARGING    : sptr = " CHRG";  break;
+            case  PRESENTSTATUS_DISCHARGING : sptr = " DISCH";  break;
+            case  PRESENTSTATUS_ACPRESENT   : sptr = " AC";  break;
+            case  PRESENTSTATUS_RTLEXPIRED  : sptr = " RTLEXPIR";  break;
+            case  PRESENTSTATUS_FULLCHARGE  : sptr = " FULL";  break;
+            case  PRESENTSTATUS_SHUTDOWNREQ : sptr = " DwnSoon";  break;
+            case  PRESENTSTATUS_SHUTDOWNIMNT: sptr = " DwnNow";  break;
+            case  PRESENTSTATUS_BATTPRESENT : sptr = " BatPres";  break;
+            default  : sptr = " ??";  break;
+            }
+            serialPtr->print(sptr);
+        }
+    }
+    serialPtr->println();
+    serialPtr->flush();
+
+}
+
 //#ifdef CDC_ENABLED  // DBC.007
 void handleLaptopInput(void)
 {
@@ -895,6 +973,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 {
                 case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage , F("Battery Full Charge V")); break;
                 case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, F("Battery Empty V"      )); break;
+                case 'C': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, (uint8_t)BC_Last, (uint8_t&)StoreEE.BatChem, F("Bat Chemistry: 0=PbAc 1=Li-Ion 2=LFP 3=AGM")); break;
+                case 'V': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 4, (uint8_t&)StoreEE.battSysVMultiplier, F("1=12V 2=24V 4=48V"), false, 1); break;
                 default:
                     serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
@@ -1098,7 +1178,10 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(F("Enable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
         serialPtr->print(F("ENCn   - While in Config mode                  : ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
         serialPtr->print(F("ENRn   - While in Normal run mode              : ")); serialPtr->println(StoreEE.msgPcEnabledRunMode );
-        serialPtr->print(F("         (0=No PC reporting/shutdown. 1=Enabled)\r\n"));
+        serialPtr->println(F("         (0=No PC reporting/shutdown. 1=Enabled)"));
+        serialPtr->println(F("BCn    - Battery Chemistry"));
+        serialPtr->print(F("             0=PbAc 1=Li-Ion 2=LFP 3=AGM       : ")); serialPtr->println(StoreEE.BatChem);
+        serialPtr->print(F("BVn    - Bat System Volts 1=12V 2=24V 4=48V    : ")); serialPtr->println(StoreEE.battSysVMultiplier);
         serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage );
         serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage);
         serialPtr->print(F("TCnnnn - Average Time to fully Charge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToFull/60  );
@@ -1108,15 +1191,15 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100)  : ")); serialPtr->print(StoreEE.calibPointHigh.voltage); serialPtr->println(F(" V*100"));
         serialPtr->print(F("         (High V A2D value: "));                      serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
         serialPtr->print(F("                            iRemnCapacityLimit : ")); serialPtr->print(StoreEE.iRemnCapacityLimit); serialPtr->println(F(")"));
-        serialPtr->println(F(" To calibrate voltage sensing for this board:"));
-        serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
-        serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
-        serialPtr->println(F("  Hook the leads back up to the battery. Measure the voltage"));
-        serialPtr->println(F("  with a good digital volt meter. Enter the command CHvvvv."));
-        serialPtr->println(F("  where vvvv is the measured voltage in hundreths of a volt."));
-        serialPtr->println(F("  (If you measured 12.45 volts, enter CH1245)"));
-        serialPtr->println(F("  Voltages will always be entered in hundredths. "));
-        serialPtr->println(F("  (V*100)"));
+        //serialPtr->println(F(" To calibrate voltage sensing for this board:"));
+        //serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
+        //serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
+        //serialPtr->println(F("  Hook the leads back up to the battery. Measure the voltage"));
+        //serialPtr->println(F("  with a good digital volt meter. Enter the command CHvvvv."));
+        //serialPtr->println(F("  where vvvv is the measured voltage in hundreths of a volt."));
+        //serialPtr->println(F("  (If you measured 12.45 volts, enter CH1245)"));
+        //serialPtr->println(F("  Voltages will always be entered in hundredths. "));
+        //serialPtr->println(F("  (V*100)"));
         serialPtr->println(F("Z   - Restore factory defaults"));
         serialPtr->println(F("ZCD - Restore compiled factory defaults"));
         //serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
