@@ -22,7 +22,7 @@ Design Notes:
 Sid's To Do:
 
 ## Hysteresis for updating % and Time remaining too.
-##
+##      Add to EEPROM
 
   Done: 
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
@@ -267,6 +267,7 @@ struct EEPROM_Struct
     uint16_t              iRemainTimeLimit;     // in seconds
     BatteryChemistryType  BatChem;              // Lead Acid, LFP, AGM, Other
     uint8_t               battSysVMultiplier;   // 1/2/3/4 for 12, 24, 36, 48 (V must be divisible by 12v)
+    uint8_t               reportingHysteresis;  // mV diff before reporting/printing a change
 
     // Parameters for ACPI compliancy
     byte iWarnCapacityLimit;    // warning at 10%
@@ -713,7 +714,7 @@ void loop(void)
 
 }
 
-#define TREND_HYSTERYSIS_V 8
+
 void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
 {
     static int16_t recentVoltage = 0;
@@ -747,7 +748,7 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
 
     bool chargingTrendTemp = batVoltageInternal > recentVoltage ;
 
-    if (ABS(recentVoltage - batVoltageInternal) > TREND_HYSTERYSIS_V)
+    if (ABS(recentVoltage - batVoltageInternal) > StoreEE.reportingHysteresis)
     {
         chargingTrend = chargingTrendTemp;
         recentVoltage = batVoltageInternal;
@@ -765,8 +766,9 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
     // For determining remaining capacity, we may need different charging and discharging curves.
     // The voltages read will probably be pushed down more if discharging faster.
     // 
-    // 
-    int iRemainingInt = map(batVoltageInternal, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
+    // DOYET use discharge curves instead of only endpoints!
+    //int iRemainingInt = map(batVoltageInternal, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
+    int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
     iRemainingInternal = constrain(iRemainingInt, 0, 100);
 
     iRunTimeToEmptyInternal = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemainingInternal / (uint32_t)100);
@@ -975,6 +977,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, F("Battery Empty V"      )); break;
                 case 'C': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, (uint8_t)BC_Last, (uint8_t&)StoreEE.BatChem, F("Bat Chemistry: 0=PbAc 1=Li-Ion 2=LFP 3=AGM")); break;
                 case 'V': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 4, (uint8_t&)StoreEE.battSysVMultiplier, F("1=12V 2=24V 4=48V"), false, 1); break;
+                case 'Y': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 100, StoreEE.reportingHysteresis, F("Bat V Hysteresis before reporting")); break;
                 default:
                     serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
@@ -1181,6 +1184,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("         (0=No PC reporting/shutdown. 1=Enabled)"));
         serialPtr->println(F("BCn    - Battery Chemistry"));
         serialPtr->print(F("             0=PbAc 1=Li-Ion 2=LFP 3=AGM       : ")); serialPtr->println(StoreEE.BatChem);
+        serialPtr->print(F("BYnn   - delta centi-Volts before reporing     : ")); serialPtr->println(StoreEE.reportingHysteresis);
         serialPtr->print(F("BVn    - Bat System Volts 1=12V 2=24V 4=48V    : ")); serialPtr->println(StoreEE.battSysVMultiplier);
         serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage );
         serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage);
@@ -1281,6 +1285,8 @@ void FactoryCompiledDefault(void)
 
     StoreEE.BatChem            = BC_AGM;
     StoreEE.battSysVMultiplier = 1;     // 1:12V
+    StoreEE.reportingHysteresis = 8;    // 8 mV
+    
 
     // Lead-Acid
     StoreEE.BattParams[BC_LeadAcid].batFullVoltage     = 1288;  // Voltage in hundredths (V*100), Bat Full
