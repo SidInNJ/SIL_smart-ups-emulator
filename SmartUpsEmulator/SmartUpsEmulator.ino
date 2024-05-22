@@ -21,9 +21,6 @@ Design Notes:
 
 Sid's To Do:
 
-## Hysteresis for updating % and Time remaining too.
-##      Add to EEPROM
-
   Done: 
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
@@ -40,24 +37,29 @@ Sid's To Do:
         4 voltage&Capacity points to better match voltage curves
         One default set for each battery type
 
-  Not Yet:
+    Hysteresis for updating % and Time remaining too, add to EEPROM
 
     Determine Charge vs Discharge via voltage history
 
-    Add commands for changing battery parameters.
-    
-    Config of UPS name/# (value is 2 or 3?) <-- Need this?
+  Not Yet:
+
+    Use capacity curves instead of endpoint for capacity calc's.
 
     Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
     and suppress other printouts.
     
+    Add commands for changing battery parameters.
+    
+    Config of UPS name/# (value is 2 or 3?) <-- Need this?
+
     Perhaps:
         In PC mode (CDC Enabled), allow config cmds over Serial1 also
             (handy for edge connector automation / Factory automated calibration)
         Cmd to switch between internal or external AREF
             (Put a 5k resistor in series with the pin to protect internal source)
             Could instead/also short another pin to ground to indicate external (PCB version).
-        
+
+
     Open Questions:
         Are Charge and Discharge mutually exclusive, or can it be neither if no charging and no load?
         Should we have a specific voltage: Above this V, assume charging.
@@ -350,6 +352,11 @@ uint8_t pcSetValue      = 0;    // The value that the host (PC) tried to set HID
 int memStillFree = 32000;   // Print every time this decreases
 byte priorRemnCapacityLimit = 0;    // Will notifiy when StoreEE.iRemnCapacityLimit changes
 
+uint8_t pointsUsed = 99;    // DEBUG REMOVE DOYET
+uint16_t vLowCurve  = 99;    // DEBUG REMOVE DOYET
+uint16_t vHiCurve   = 99;    // DEBUG REMOVE DOYET
+
+
 void setup(void)
 {
     char prTxt[] = ".ino setup() started.\n\r";
@@ -554,6 +561,17 @@ void loop(void)
                 if ((iPresentStatusInternal != prevPresentStatusInternal) || (iRemainingInternal != prevRemainingInternal) || (iRunTimeToEmptyInternal != prevRunTimeToEmptyInternal) || (iIntTimer > MINUPDATEINTERVAL))
                 {
                     Stream *serialPtr = SERIALPORT_Addr;
+
+                    SERIALPORT_PRINT(F("CrvUsed: "));  // DEBUG REMOVE DOYET
+                    SERIALPORT_PRINT(pointsUsed);  // DEBUG REMOVE DOYET
+                    SERIALPORT_PRINT(F(", "));  // DEBUG REMOVE DOYET
+
+                    SERIALPORT_PRINT(F("LowV: "));  // DEBUG REMOVE DOYET
+                    SERIALPORT_PRINT(vLowCurve);  // DEBUG REMOVE DOYET
+
+                    SERIALPORT_PRINT(F(" HiV: "));  // DEBUG REMOVE DOYET
+                    SERIALPORT_PRINT(vHiCurve);  // DEBUG REMOVE DOYET
+                    SERIALPORT_PRINT(F(", "));  // DEBUG REMOVE DOYET
 
                     SERIALPORT_PRINT(F("# Sensed: "));
 
@@ -767,9 +785,10 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
     // The voltages read will probably be pushed down more if discharging faster.
     // 
     // DOYET use discharge curves instead of only endpoints!
-    //int iRemainingInt = map(batVoltageInternal, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
-    int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
-    iRemainingInternal = constrain(iRemainingInt, 0, 100);
+    //int iRemainingInt = map(batVoltage, StoreEE.BattParams[StoreEE.BatChem].batEmptyVoltage, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage, 0, 100);
+    //iRemainingInternal = constrain(iRemainingInt, 0, 100);
+
+    iRemainingInternal = capacityFromVCurve(batVoltage, StoreEE.BatChem);
 
     iRunTimeToEmptyInternal = (uint16_t)((uint32_t)StoreEE.iAvgTimeToEmpty * (uint32_t)iRemainingInternal / (uint32_t)100);
 
@@ -833,6 +852,27 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
 
 }
 
+byte capacityFromVCurve(uint16_t centiV, BatteryChemistryType ct)
+{
+    uint8_t j = 0;
+
+    for (uint8_t i = 1; i < StoreEE.BattParams[ct].numCapacityPointsUsed; i++)
+    {
+        if (centiV < StoreEE.BattParams[ct].VtoCapacities[i].voltage)
+            break;
+        j++;
+    }
+    if (j > 2) 
+        j = 2;
+    int iRemainingInt = map(centiV, StoreEE.BattParams[ct].VtoCapacities[j].voltage, StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage, 0, 100);
+    byte capacity = constrain(iRemainingInt, 0, 100);
+
+    pointsUsed = j; // DEBUG REMOVE DOYET
+    vHiCurve  = StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage;
+    vLowCurve = StoreEE.BattParams[ct].VtoCapacities[j].voltage;
+
+    return capacity;
+}
 
 // Print Remaining %, minutes:Seconds, Discharging Y/N, Status bits
 void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, uint16_t batV, bool bDischarging, uint16_t iPresentStatus)
@@ -1268,6 +1308,26 @@ void FactoryDefault(void)
     EEPROM.get(EEP_OFFSET_FACTORY, StoreEE); // Fetch our structure of non-volitale vars from "Factory Default" EEPROM
 }
 
+
+//BatteryParams bp_ADM = {
+//        { 1050,   0 },
+//        { 1151,  10 },
+//        { 1275,  90 },
+//        { 1282, 100 },
+//        4,
+//        1380, 1050, 1250, 1150, (120 * 60), 0
+//    };
+
+const BatteryParams bp_ADM = {
+         1050,   0 ,
+         1151,  10 ,
+         1275,  90 ,
+         1282, 100 ,
+        4,
+        1380, 1050, 1280, 1150, (120 * 60), 0
+    };
+
+
 void FactoryCompiledDefault(void)
 {
     //StoreEE.debugFlags        =  0;  // No debug prints by default  // DBC.007
@@ -1302,6 +1362,22 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].voltage = 1278;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
     StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].voltage = 1288;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
 
+/*
+struct BatteryParams
+{
+    VtoCapacity VtoCapacities[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
+    uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacities[])
+    uint16_t    batFullVoltage;                         // in hundredths of volts
+    uint16_t    batEmptyVoltage;                        // in hundredths of volts
+    uint16_t    isChargingVolts;                        // in hundredths of volts: Above this v, must be charging
+    uint16_t    isDisChargingVolts;                     // " " ": Below this v, must be discharging
+    uint16_t    iCalcdTimeToEmpty;                      // Runtime calculated time to empty from full
+    uint8_t     timeToEmptyCalcState;                   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
+};
+
+*/
+
+#if false
     // AGM
     StoreEE.BattParams[BC_AGM].batFullVoltage     = 1380;   // Voltage in hundredths (V*100), Bat Full
     StoreEE.BattParams[BC_AGM].batEmptyVoltage    = 1050;   // V*100, Bat Empty       
@@ -1315,6 +1391,10 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_AGM].VtoCapacities[1].voltage = 1151;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
     StoreEE.BattParams[BC_AGM].VtoCapacities[2].voltage = 1275;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
     StoreEE.BattParams[BC_AGM].VtoCapacities[3].voltage = 1282;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
+#else
+    // This saves 78 bytes of program space, takes up 28 more bytes of RAM (just for BC_AGM)
+    memcpy(&StoreEE.BattParams[BC_AGM], &bp_ADM, sizeof(StoreEE.BattParams[BC_AGM]));
+#endif
 
     // LI_ION
     StoreEE.BattParams[BC_LI_ION].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
