@@ -27,7 +27,7 @@ extern bool SerialIsInitialized;    // Set in SmartUpsEmulator.ino
     #define SERIALPORT_WRITE(a) ((USBCDCNeeded && SerialIsInitialized) ? Serial.write(a) : Serial1.write(a))
 #else
     #define SERIALPORT Serial1  // Using pins 0/1 for Serial1 Rx/Tx
-    #define SERIALPORT_Addr             (Stream *)&Serial1)
+    #define SERIALPORT_Addr             (Stream *)&Serial1
     #define SERIALPORT_PRINTLN(args...) Serial1.println(args)
     #define SERIALPORT_PRINT(args...)   Serial1.print(args) 
     #define SERIALPORT_AVAILABLE()      Serial1.available())

@@ -814,7 +814,7 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
         {
             SERIALPORT_PRINT(F("Shutdown now! Rtte="));
             SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
-            SERIALPORT_Addr->flush();
+            //SERIALPORT_Addr->flush();
             //delay(500);
 
             bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
