@@ -3,10 +3,28 @@
 #include "HandyHelpers.h"
 #include <string.h>
 
+
+uint16_t HandyHelpers::anaFilter_ms(uint8_t AnaInChan, uint16_t ms) // 100ms: 6 full-waves of AC power at 60Hz, 5 at 50Hz.
+{
+    uint32_t readingsSum = 0;
+    uint32_t readCount = 0;
+    uint32_t startTime = millis();
+
+    while ((millis() - startTime) > ms)
+    {
+        readingsSum += analogRead(AnaInChan);
+        readCount++;
+    }
+
+    if (readCount)      // Avoid possible div by 0 fault
+        return readingsSum / readCount;
+    else
+        return analogRead(AnaInChan);
+}
+
 //Protos:
 int compare_int16(const void *cmp1, const void *cmp2);
-
-
+//
 // 29 is good value for numSamples as it takes the time of a full-wave of AC power.
 uint16_t HandyHelpers::anaFilter_Mid(uint8_t AnaInChan, uint8_t numSamples)
 {
@@ -21,14 +39,14 @@ uint16_t HandyHelpers::anaFilter_Mid(uint8_t AnaInChan, uint8_t numSamples)
     m_serialPtr->flush();
     //uint32_t startTime = millis();
 
+#define DO_MINSAMPLECHECK false //DOYET DEBUG
+
+#if DO_MINSAMPLECHECK
     if (numSamples > MAX_ALLOWABLE_SAMPLES)
     {
         m_serialPtr->println(F("Programming ERROR: anaFilter_Mid(): Requested more samples than array can hold."));
     }
 
-    #define DO_MINSAMPLECHECK false //DOYET DEBUG
-
-#if DO_MINSAMPLECHECK
     if (numSamples <3)
     {
         m_serialPtr->println(F("Programming Warning: anaFilter_Mid(): Requested less than 3 samples; increased to 3."));

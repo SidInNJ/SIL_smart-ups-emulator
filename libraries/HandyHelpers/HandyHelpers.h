@@ -202,6 +202,7 @@ public:
     HandyHelpers(void) { m_serialPtr = SERIALPORT_Addr; }
 
     uint16_t anaFilter_Mid(uint8_t AnaInChan, uint8_t numSamples = 29); // 29 is good value for numSamples as it takes the time of a full-wave of AC power.
+    uint16_t anaFilter_ms(uint8_t AnaInChan, uint16_t ms = 100); // 100ms: 6 full-waves of AC power at 60Hz, 5 at 50Hz.
 
     uint8_t valueToTableIndex(int32_t val, int16_t table[], uint8_t tblCount);  // Return  index of table member closest to supplied value
     //

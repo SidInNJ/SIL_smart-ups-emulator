@@ -363,9 +363,11 @@ uint16_t vHiCurve   = 99;    // DEBUG REMOVE DOYET
 
 void setup(void)
 {
+#if SERIAL1_IRQ_DEBUG
     char prTxt[] = ".ino setup() started.\n\r";
     if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
         memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
+#endif
 
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
     while (!Serial1)
@@ -513,6 +515,7 @@ Timer_ms timeToUpdate;
 
 void loop(void)
 {
+#if SERIAL1_IRQ_DEBUG
     static bool firstLoop = true;
     if (firstLoop)
     {
@@ -521,6 +524,7 @@ void loop(void)
             memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
         firstLoop = false;
     }
+#endif
 
     WATCHDOG_RESET; // Reset watchdog frequently
 
@@ -743,11 +747,9 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
     static bool firstPass = true;
     static bool chargingTrend  = false;
 
-
-
     // DOYET Replace:
     // Do noise resistant reading of battery voltage
-    int anaValue = analogRead(PIN_BATTERY_VOLTAGE);       // TODO - this is for debug only. Replace with charge estimation
+    int anaValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);       // 
 
     //if (true)
     //{
@@ -810,11 +812,13 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
         bitSet(iPresentStatusInternal, PRESENTSTATUS_DISCHARGING);
         // if(iRemainingInternal < iRemnCapacityLimit) bitSet(iPresentStatusInternal,PRESENTSTATUS_BELOWRCL);
 
-        if (iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit)
+        if ((iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit) || (batVoltageInternal < (int)StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage))
         {
-            SERIALPORT_PRINT(F("Shutdown now! Rtte="));
+            SERIALPORT_PRINT(F("Shutdown now! Rtte seconds="));
             SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
-            //SERIALPORT_Addr->flush();
+            SERIALPORT_PRINT(F("BatV="));
+            SERIALPORT_PRINTLN(batVoltageInternal);
+            SERIALPORT_Addr->flush();
             //delay(500);
 
             bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
@@ -1017,9 +1021,17 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             {
                 switch ((char)toupper(userIn[1]))
                 {
-                case 'F': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].batFullVoltage , F("Battery Full Charge V")); break;
-                case 'W': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].warningVoltage, F("Warn at V"      )); break;
-                case 'E': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage, F("Battery Empty V"      )); break;
+                case 'F': 
+                    {
+                        uint16_t voltsTemp = StoreEE.BattParams[StoreEE.BatChem].batFullVoltage  * StoreEE.battSysVMultiplier;
+                        if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, voltsTemp , F("Battery Full Charge V")))
+                        {
+                            StoreEE.BattParams[StoreEE.BatChem].batFullVoltage = voltsTemp / StoreEE.battSysVMultiplier;
+                        }
+                    }
+                break;
+                //case 'W': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].warningVoltage, F("Warn at V"      )); break;
+                case 'D': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage, F("Shutdown at Battery V"      )); break;
                 case 'C': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, (uint8_t)BC_Last, (uint8_t&)StoreEE.BatChem, F("Bat Chemistry: 0=PbAc 1=Li-Ion 2=LFP 3=AGM")); break;
                 case 'V': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 4, (uint8_t&)StoreEE.battSysVMultiplier, F("1=12V 2=24V 4=48V"), false, 1); break;
                 case 'Y': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 100, StoreEE.reportingHysteresis, F("Bat V Hysteresis before reporting")); break;
@@ -1035,19 +1047,23 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             {
                 switch ((char)toupper(userIn[1]))
                 {
-                case 'C': 
+                case 'S': 
                     {
-                        uint16_t minsTemp = StoreEE.iAvgTimeToFull / 60;
-                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, F("Minutes to fully charge from dead"   )); 
-                        StoreEE.iAvgTimeToFull = minsTemp * 60;
+                        uint16_t minsTemp = StoreEE.iRemainTimeLimit / 60;
+                        if(MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 1090, minsTemp, F("Shutdown at Minutes Left"   )))
+                        {
+                            StoreEE.iRemainTimeLimit = minsTemp * 60;
+                        }
                     }
                     break;
 
                 case 'D': 
                     {
                         uint16_t minsTemp = StoreEE.iAvgTimeToEmpty / 60;
-                        MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, F("Minutes to fully discharge from full")); 
-                        StoreEE.iAvgTimeToEmpty = minsTemp * 60;
+                        if(MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, minsTemp, F("Minutes to fully discharge from full")))
+                        {
+                            StoreEE.iAvgTimeToEmpty = minsTemp * 60;
+                        }
                     }
                     break;
 
@@ -1065,21 +1081,21 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 {
                 case 'L': 
                     {
-                        uint16_t valVin100s = StoreEE.calibPointLow.voltage;
+                        uint16_t valVin100s = StoreEE.calibPointLow.voltage * StoreEE.battSysVMultiplier;
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of low voltage")   ))
                         {
-                            StoreEE.calibPointLow.voltage = valVin100s;
-                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
+                            StoreEE.calibPointLow.voltage = valVin100s / StoreEE.battSysVMultiplier;
+                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);
                         }
                     }
                     break;
                 case 'H':
                     {
-                        uint16_t valVin100s = StoreEE.calibPointHigh.voltage;
+                        uint16_t valVin100s = StoreEE.calibPointHigh.voltage * StoreEE.battSysVMultiplier;
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of higher voltage")))
                         {
-                            StoreEE.calibPointHigh.voltage = valVin100s;
-                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_Mid(PIN_BATTERY_VOLTAGE);
+                            StoreEE.calibPointHigh.voltage = valVin100s / StoreEE.battSysVMultiplier;
+                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);
                         }
                     }
                     break;
@@ -1229,18 +1245,18 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("         (0=No PC reporting/shutdown. 1=Enabled)"));
         serialPtr->println(F("BCn    - Battery Chemistry"));
         serialPtr->print(F("             0=PbAc 1=Li-Ion 2=LFP 3=AGM       : ")); serialPtr->println(StoreEE.BatChem);
-        serialPtr->print(F("BYnn   - delta centi-Volts before reporing     : ")); serialPtr->println(StoreEE.reportingHysteresis);
         serialPtr->print(F("BVn    - Bat System Volts 1=12V 2=24V 4=48V    : ")); serialPtr->println(StoreEE.battSysVMultiplier);
-        serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage );
-        serialPtr->print(F("BWnnnn - Battery Warning voltage        (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].warningVoltage);
-        serialPtr->print(F("BEnnnn - Battery Empty voltage          (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage);
-        serialPtr->print(F("TCnnnn - Average Time to fully Charge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToFull/60  );
+        serialPtr->print(F("BFnnnn - Battery Full Charge voltage    (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage * StoreEE.battSysVMultiplier);
+        //serialPtr->print(F("BWnnnn - Battery Warning voltage        (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].warningVoltage);
+        serialPtr->print(F("BDnnnn - Shut Down at battery voltage   (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage * StoreEE.battSysVMultiplier);
+        serialPtr->print(F("TSnnnn - Shut down at this many minutes left   : ")); serialPtr->println(StoreEE.iRemainTimeLimit/60  );
         serialPtr->print(F("TDnnnn - Ave. Time for full Discharge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToEmpty/60 );
-        serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100)   : ")); serialPtr->print(StoreEE.calibPointLow.voltage); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100)   : ")); serialPtr->print(StoreEE.calibPointLow.voltage  * StoreEE.battSysVMultiplier); serialPtr->println(F(" V*100"));
         serialPtr->print(F("         (Low V A2D value: "));                       serialPtr->print(StoreEE.calibPointLow.a2dValue); serialPtr->println(F(")"));
-        serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100)  : ")); serialPtr->print(StoreEE.calibPointHigh.voltage); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100)  : ")); serialPtr->print(StoreEE.calibPointHigh.voltage  * StoreEE.battSysVMultiplier); serialPtr->println(F(" V*100"));
         serialPtr->print(F("         (High V A2D value: "));                      serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
         serialPtr->print(F("                            iRemnCapacityLimit : ")); serialPtr->print(StoreEE.iRemnCapacityLimit); serialPtr->println(F(")"));
+        serialPtr->print(F("BYnn   - delta centi-Volts before reporing     : ")); serialPtr->println(StoreEE.reportingHysteresis);
         //serialPtr->println(F(" To calibrate voltage sensing for this board:"));
         //serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
         //serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
@@ -1359,7 +1375,7 @@ void FactoryCompiledDefault(void)
     // Physical parameters
     StoreEE.iAvgTimeToFull     = 120*60;
     StoreEE.iAvgTimeToEmpty    = 120*60;
-    StoreEE.iRemainTimeLimit   =  10*60;
+    StoreEE.iRemainTimeLimit   =  5*60;
 
     StoreEE.BatChem            = BC_AGM;
     StoreEE.battSysVMultiplier = 1;     // 1:12V
