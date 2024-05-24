@@ -246,11 +246,11 @@ struct BatteryParams
 enum BatteryChemistryType 
 {
     BC_LeadAcid = 0,
-    BC_LI_ION = 1,
-    BC_LFP = 2,
-    BC_AGM = 3,
-    BC_Other = 4,
-    BC_Last = BC_Other
+    BC_LI_ION   = 1,
+    BC_LFP      = 2,
+    BC_AGM      = 3,
+    BC_Other    = 4,
+    BC_Last     = BC_Other
 };
 
 
@@ -315,9 +315,9 @@ EEPROM_Struct   StoreEE;        // User EEPROM & unchanging calibs. May restore 
 void handleLaptopInput(void);
 void printHelp(void);
 void watchDogReset(void);
-void printHelp(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
+void printHelp(Stream *serialPtr = SERIALPORT_Addr);
 void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inByte, Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
-void showPersistentSettings(Stream *serialPtr = SERIALPORT_Addr, bool handleUsbOnlyOptions = true);
+void showPersistentSettings(Stream *serialPtr = SERIALPORT_Addr);
 void showParameters(Stream *serialPtr);
 
 void enableDebugPrints(uint8_t debugPrBits);
@@ -359,16 +359,11 @@ byte priorRemnCapacityLimit = 0;    // Will notifiy when StoreEE.iRemnCapacityLi
 uint8_t pointsUsed = 99;    // DEBUG REMOVE DOYET
 uint16_t vLowCurve  = 99;    // DEBUG REMOVE DOYET
 uint16_t vHiCurve   = 99;    // DEBUG REMOVE DOYET
+int capacityDebug   = 99;    // DEBUG REMOVE DOYET
 
 
 void setup(void)
 {
-#if SERIAL1_IRQ_DEBUG
-    char prTxt[] = ".ino setup() started.\n\r";
-    if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
-        memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
-#endif
-
     Serial1.begin(115200);  // Always enable Serial1 in case we enable Serial1 debugging  SLR
     while (!Serial1)
         delay(10);
@@ -431,6 +426,8 @@ void setup(void)
     bACPresent = bCharging;    // TODO - replace with sensor
     bDischarging = !bCharging; // TODO - replace with sensor     PowerDevice.setFeature(HID_PD_PRESENTSTATUS, &iPresentStatus, sizeof(iPresentStatus));
 
+    batVoltage = StoreEE.BattParams[StoreEE.BatChem].batFullVoltage;
+
     // Read battery, calc % charge, time remaining, status bits to set/clear
     UpdateBatteryStatus(bCharging, bACPresent, bDischarging);
 
@@ -457,7 +454,6 @@ void setup(void)
     PowerDevice.setStringFeature(HID_PD_IDEVICECHEMISTRY, &bDeviceChemistry, STRING_DEVICECHEMISTRY );
     PowerDevice.setStringFeature(HID_PD_IOEMINFORMATION, &bOEMVendor,        STRING_OEMVENDOR       );
 
-    batVoltage = StoreEE.BattParams[StoreEE.BatChem].batFullVoltage;
 
 #ifdef CDC_ENABLED
     if (USBCDCNeeded)
@@ -515,16 +511,6 @@ Timer_ms timeToUpdate;
 
 void loop(void)
 {
-#if SERIAL1_IRQ_DEBUG
-    static bool firstLoop = true;
-    if (firstLoop)
-    {
-        char prTxt[] = "First call of loop()\n\r";
-        if ((sizeof(USBDebug) - strlen(USBDebug)) > (strlen(prTxt)+1))  // Debug printout later
-            memcpy(&USBDebug[strlen(USBDebug)], prTxt, strlen(prTxt)+1);
-        firstLoop = false;
-    }
-#endif
 
     WATCHDOG_RESET; // Reset watchdog frequently
 
@@ -583,7 +569,7 @@ void loop(void)
 
                     SERIALPORT_PRINT(F("# Sensed: "));
 
-                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, bDischarging, iPresentStatusInternal);     // Print Remaining minutes,
+                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, iPresentStatusInternal);     // Print Remaining minutes,
 
                     prevPresentStatusInternal  = iPresentStatusInternal ;
                     prevRunTimeToEmptyInternal = iRunTimeToEmptyInternal;
@@ -619,7 +605,7 @@ void loop(void)
 
                 SERIALPORT_PRINT(F("Sending: "));
 
-                printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage, bDischarging, iPresentStatus);     // Print Remaining minutes,
+                printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage, iPresentStatus);     // Print Remaining minutes,
 
                 SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
 
@@ -815,8 +801,8 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
         if ((iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit) || (batVoltageInternal < (int)StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage))
         {
             SERIALPORT_PRINT(F("Shutdown now! Rtte seconds="));
-            SERIALPORT_PRINTLN(iRunTimeToEmptyInternal);
-            SERIALPORT_PRINT(F("BatV="));
+            SERIALPORT_PRINT(iRunTimeToEmptyInternal);
+            SERIALPORT_PRINT(F(", BatV="));
             SERIALPORT_PRINTLN(batVoltageInternal);
             SERIALPORT_Addr->flush();
             //delay(500);
@@ -872,7 +858,10 @@ byte capacityFromVCurve(uint16_t centiV, BatteryChemistryType ct)
     }
     if (j > 2) 
         j = 2;
-    int iRemainingInt = map(centiV, StoreEE.BattParams[ct].VtoCapacities[j].voltage, StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage, 0, 100);
+    int iRemainingInt = map(centiV, 
+                            StoreEE.BattParams[ct].VtoCapacities[j].voltage, StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage, 
+                            StoreEE.BattParams[ct].VtoCapacities[j].capacity, StoreEE.BattParams[ct].VtoCapacities[j + 1].capacity);
+    capacityDebug = iRemainingInt;
     byte capacity = constrain(iRemainingInt, 0, 100);
 
     pointsUsed = j; // DEBUG REMOVE DOYET
@@ -883,7 +872,7 @@ byte capacityFromVCurve(uint16_t centiV, BatteryChemistryType ct)
 }
 
 // Print Remaining %, minutes:Seconds, Discharging Y/N, Status bits
-void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, uint16_t batV, bool bDischarging, uint16_t iPresentStatus)
+void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, uint16_t batV, uint16_t iPresentStatus)
 {
     serialPtr->print(F("Batt Remaining = "));
     serialPtr->print(iRemaining);
@@ -895,8 +884,6 @@ void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, u
     serialPtr->print(batVoltageInternal);       // DEBUG Remove these 2 lines 
     serialPtr->print(F(", BatV: "));
     serialPtr->print(batV);
-    //serialPtr->print(F(", Discharging: "));
-    //serialPtr->print(bDischarging ? "Y" : "N");
     serialPtr->print(F(", Status = 0x"));
     serialPtr->print(iPresentStatus, HEX);
     const char *sptr = "";
@@ -1123,9 +1110,12 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     showParameters(serialPtr);
                     break;
 #endif
+                case 'C':
+                    printCapacityConfig(serialPtr);
+                    break;
 
                 default:
-                      printHelp(serialPtr, handleUsbOnlyOptions);  // DBC.007
+                      printHelp(serialPtr);  // DBC.007
                     break;                                         // DBC.007
                 }
             }
@@ -1230,7 +1220,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 //            ABCDEFGHIJKLMNOPQRSTUVWXYZ
 // #&()+--/?@^ABCDEFGHIJKLMN PQRSTUVWXYZ~  ('!' reserved for BLE commands (color/Up/DwnArrow), P for Password)
 //
-    void showPersistentSettings(Stream * serialPtr, bool handleUsbOnlyOptions)
+    void showPersistentSettings(Stream * serialPtr)
     {
         serialPtr->println();
         serialPtr->println(F(PROG_NAME_VERSION));
@@ -1239,10 +1229,10 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println();
 
         serialPtr->println(F("Present Settings:"));
-        serialPtr->print(F("Enable reporting/Shutdown to to the PC: ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
+        serialPtr->println(F("Enable reporting/Shutdown to to the PC ")); 
+        serialPtr->println(F("   (0=No PC reporting/shutdown. 1=Enabled)"));
         serialPtr->print(F("ENCn   - While in Config mode                  : ")); serialPtr->println(StoreEE.msgPcEnabledCfgMode );
         serialPtr->print(F("ENRn   - While in Normal run mode              : ")); serialPtr->println(StoreEE.msgPcEnabledRunMode );
-        serialPtr->println(F("         (0=No PC reporting/shutdown. 1=Enabled)"));
         serialPtr->println(F("BCn    - Battery Chemistry"));
         serialPtr->print(F("             0=PbAc 1=Li-Ion 2=LFP 3=AGM       : ")); serialPtr->println(StoreEE.BatChem);
         serialPtr->print(F("BVn    - Bat System Volts 1=12V 2=24V 4=48V    : ")); serialPtr->println(StoreEE.battSysVMultiplier);
@@ -1271,7 +1261,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
 
         serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
-        serialPtr->print(F("Battery Voltage*100: ")); serialPtr->println(batVoltage);
+        serialPtr->print(F("Battery Voltage*100: ")); serialPtr->print(batVoltage);
+        serialPtr->print(F(", capacityDebug: ")); serialPtr->print(capacityDebug);
         serialPtr->print(F(", Batt Remaining = "));
         serialPtr->print(iRemaining);
         serialPtr->print(F("%, "));
@@ -1315,15 +1306,55 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
     }
 #endif
 
-void printHelp(Stream * serialPtr, bool handleUsbOnlyOptions)
+void printCapacityConfig(Stream * serialPtr)
+{
+    serialPtr->println(F("Chemistry Configs:"));
+    for (uint8_t i = 0; i <= BC_Last; i++)
+    {
+        serialPtr->print(F("\n\rBat Type: ")); printBatTypeStr(serialPtr, (BatteryChemistryType)i);
+        serialPtr->print(F("\n\r batFullVoltage:"));
+        serialPtr->println(StoreEE.BattParams[i].batFullVoltage * StoreEE.battSysVMultiplier);
+        serialPtr->print(F("warningVoltage: ")); serialPtr->println(StoreEE.BattParams[i].warningVoltage  * StoreEE.battSysVMultiplier    );
+        serialPtr->print(F("shutdownVoltag: ")); serialPtr->println(StoreEE.BattParams[i].shutdownVoltage * StoreEE.battSysVMultiplier  );
+        serialPtr->print(F("isChargingVolt: ")); serialPtr->println(StoreEE.BattParams[i].isChargingVolts);
+        serialPtr->print(F("isDisChargingV: ")); serialPtr->println(StoreEE.BattParams[i].isDisChargingVolts);
+        serialPtr->println(F("Capacity Curve points:"));
+
+        for (uint8_t j = 0; j < StoreEE.BattParams[i].numCapacityPointsUsed; j++)
+        {
+            serialPtr->print(F("Voltage: ")); serialPtr->print(StoreEE.BattParams[i].VtoCapacities[j].voltage * StoreEE.battSysVMultiplier);
+            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacities[j].capacity);
+        }
+    }
+}
+
+
+void printHelp(Stream * serialPtr)
 {
     serialPtr->println(F("\n----Menu----"));
-    showPersistentSettings(serialPtr, handleUsbOnlyOptions); // DBC.007
-    serialPtr->println(F("HP - Show Parameters"));
+    showPersistentSettings(serialPtr); // DBC.007
+#if SHOW_ALL_PARAMS
+    serialPtr->println(F("HP - Show HID Parameters"));
+#endif
+    serialPtr->println(F("HC - Show Capacity configs"));
     serialPtr->println(F("Z  - Restore Factory Defaults"));
     serialPtr->println("Size of StoreEE: " + String(sizeof(StoreEE)));
 }
 
+void printBatTypeStr(Stream *serialPtr, BatteryChemistryType typ)
+{
+    const char *sptr = "";
+    switch (typ)
+    {
+        case BC_LeadAcid: sptr = "LeadAcid";  break;
+        case BC_LI_ION  : sptr = "LI_ION"  ;  break;
+        case BC_LFP     : sptr = "LFP"     ;  break;
+        case BC_AGM     : sptr = "AGM"     ;  break;
+        case BC_Other   : sptr = "Other"   ;  break;
+        default  : sptr = " ??";  break;
+    }
+    serialPtr->print(sptr);
+}
 
 void FactoryDefault(void)
 {
@@ -1392,10 +1423,10 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LeadAcid].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LeadAcid].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: AGM
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].voltage = 1162;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].voltage = 1170;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].voltage = 1278;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].voltage = 1288;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].voltage = 1162;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].voltage = 1170;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].voltage = 1278;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].voltage = 1288;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].capacity = 100;   // 
 
 
 #if false
@@ -1427,10 +1458,10 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LI_ION].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LI_ION].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: LFP
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].voltage = 1280;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  20;   // 
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].voltage = 1360;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].voltage = 1280;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].voltage = 1360;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
 
     // LFP
     StoreEE.BattParams[BC_LFP].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
@@ -1442,10 +1473,10 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LFP].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LFP].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: LFP
-    StoreEE.BattParams[BC_LFP].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
-    StoreEE.BattParams[BC_LFP].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =   9;   // 
-    StoreEE.BattParams[BC_LFP].VtoCapacities[2].voltage = 1290;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  20;   // 
-    StoreEE.BattParams[BC_LFP].VtoCapacities[3].voltage = 1350;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+    StoreEE.BattParams[BC_LFP].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_LFP].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LFP].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_LFP].VtoCapacities[1].capacity =   9;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacities[2].voltage = 1290;  StoreEE.BattParams[BC_LFP].VtoCapacities[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacities[3].voltage = 1350;  StoreEE.BattParams[BC_LFP].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
 
     memcpy(&StoreEE.BattParams[BC_Other], &StoreEE.BattParams[BC_AGM], sizeof(StoreEE.BattParams[BC_AGM]));   // Init "Other" too
 

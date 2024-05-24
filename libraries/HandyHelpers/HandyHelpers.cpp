@@ -8,6 +8,9 @@ uint16_t HandyHelpers::anaFilter_ms(uint8_t AnaInChan, uint16_t ms) // 100ms: 6 
 {
     uint32_t readingsSum = 0;
     uint32_t readCount = 0;
+
+    SERIALPORT_Addr->flush();   // So this doesn't get interrupted by in-progress printing
+
     uint32_t startTime = millis();
 
     while ((millis() - startTime) > ms)
