@@ -40,18 +40,29 @@ Sid's To Do:
     Hysteresis for updating % and Time remaining too, add to EEPROM
  
     Use capacity curves instead of endpoint for capacity calc's.
- 
-Not Yet: 
+
     Configurable Shutdown-voltage; shut down on V or capacity
  
     Config warn and shutdown capacities and Voltage 
  
     Determine Charge vs Discharge via voltage history
 
+Not Yet: 
+
+    Via commands, Simulate battery voltage for easy PC comm testing
+
+    Should we say 100% charged if stays at charging voltage for x minutes?
+
+    Verify voltage multiplier working everywhere
+
+    Check actual used RAM via pattern in RAM.
+
     Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
     and suppress other printouts.
     
-    Add commands for changing battery parameters.
+    Add commands for changing battery parameters -> Curves
+
+    3 Curves per chemistry? Discharge high rate, low rate, Charging
     
     Config of UPS name/# (value is 2 or 3?) <-- Need this?
 
@@ -116,6 +127,9 @@ bool SerialIsInitialized = false;
 
 #define SHOW_ALL_PARAMS true      // Def to enable cmd 'P' to dump all parameters
 
+#define USE_WATCHDOG        true   // 
+#define ENABLE_MEM_DISPLAYS true   //   Show remaining RAM
+
 /*
  For Sid, the project is located at: C:\Users\User\Documents\GitHub\smart-ups-emulator
  arduino-cli compile --warnings more --fqbn arduino:avr:mega SmartUpsEmulator\SmartUpsEmulator.ino
@@ -123,9 +137,7 @@ bool SerialIsInitialized = false;
 
 /*
 Todo: 
-    Board voltage calibration. To EEPROM
     Via commands, Simulate battery voltage for easy PC comm testing
-    Enable Watchdog
   Testing:
     See if need % left or just the shutdown cmd: Appeard to be % left.
     What kind of shut down does it do? (Sleep: Open app is open on start up)
@@ -193,11 +205,13 @@ uint16_t iPresentStatusInternal = 0;
 
 int iRes = 0;
 
-// Watchdog DOYET
-//#define WATCHDOG_RESET true   // DOYET
-#ifndef WATCHDOG_RESET
+// Watchdog 
+#if USE_WATCHDOG
+    #include <Adafruit_SleepyDog.h>
+    #define WATCHDOG_RESET Watchdog.reset();    // Reset watchdog frequently
+#else
     #define WATCHDOG_RESET
-#endif 
+#endif
 
 #define PROG_NAME_VERSION "Smart UPS Emulator v0.1"
 
@@ -232,8 +246,9 @@ struct VtoCapacity
 // For all bat chemistries: Capacity curve, Definetely charging V, Discharging V
 struct BatteryParams
 {
-    VtoCapacity VtoCapacities[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
-    uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacities[])
+    VtoCapacity VtoCapacitiesHiDisch[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
+    VtoCapacity VtoCapacitiesLoDisch[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
+    VtoCapacity VtoCapacitiesChrg[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
     uint16_t    batFullVoltage;                         // in hundredths of volts
     uint16_t    warningVoltage;                        // in hundredths of volts
     uint16_t    shutdownVoltage;                        // in hundredths of volts
@@ -307,7 +322,7 @@ struct EEPROM_Struct
 EEPROM_Struct   StoreEE;        // User EEPROM & unchanging calibs. May restore from user or factory inmages in EEPROM.
 
 #define EEP_OFFSET_USER     0   // Starting address in EEPROM of normal user saved parameters
-#define EEP_OFFSET_FACTORY  256   // Starting address in EEPROM of "Factory Default" parameters
+#define EEP_OFFSET_FACTORY  400   // Starting address in EEPROM of "Factory Default" parameters
 
 ////////////////////
 // P R O T O S
@@ -368,6 +383,18 @@ void setup(void)
     while (!Serial1)
         delay(10);
 
+#if USE_WATCHDOG
+   int countdownMS = Watchdog.enable(8000);
+   Serial.print("Enabled the watchdog with max countdown of ");
+   Serial.print(countdownMS, DEC);
+   Serial.println(" milliseconds!");
+   Serial.println();
+
+   // Reset watchdog frequently
+   Watchdog.reset();
+
+#endif
+
     // New for GTIS
     EEPROM.get(EEP_OFFSET_USER, StoreEE); // Fetch our structure of non-volitale vars from EEPROM
 
@@ -420,6 +447,8 @@ void setup(void)
     bitSet(iPresentStatus, PRESENTSTATUS_CHARGING);
     bitSet(iPresentStatus, PRESENTSTATUS_ACPRESENT);
     bitSet(iPresentStatus, PRESENTSTATUS_FULLCHARGE);
+
+    WATCHDOG_RESET; // Reset watchdog frequently
 
     bCharging = true;
     //digitalRead(PIN_INPUT_PWR_FAIL);
@@ -501,8 +530,12 @@ void setup(void)
     SERIALPORT_PRINTLN(F("Starting....\n\r"));
 #endif // SEND_INITIAL_RPT
 
+    WATCHDOG_RESET; // Reset watchdog frequently
     delay(200);
 
+#if ENABLE_MEM_DISPLAYS
+    fillFreeMemory();
+#endif
     statusLedTimerOn.Start(10);
 }
 
@@ -710,12 +743,14 @@ void loop(void)
         digitalWrite(PIN_LED_STATUS, HIGH);
     }
 
+#if ENABLE_MEM_DISPLAYS
     if (memStillFree > freeMemory())
     {
         memStillFree = freeMemory();
         SERIALPORT_PRINT(F("Available Memory: "));
         SERIALPORT_PRINTLN(memStillFree);
     }
+#endif
 
     if (priorRemnCapacityLimit != StoreEE.iRemnCapacityLimit)
     {
@@ -804,7 +839,7 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
             SERIALPORT_PRINT(iRunTimeToEmptyInternal);
             SERIALPORT_PRINT(F(", BatV="));
             SERIALPORT_PRINTLN(batVoltageInternal);
-            SERIALPORT_Addr->flush();
+            //SERIALPORT_Addr->flush();
             //delay(500);
 
             bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
@@ -850,23 +885,23 @@ byte capacityFromVCurve(uint16_t centiV, BatteryChemistryType ct)
 {
     uint8_t j = 0;
 
-    for (uint8_t i = 1; i < StoreEE.BattParams[ct].numCapacityPointsUsed; i++)
+    for (uint8_t i = 1; i < NUM_CAPACITY_POINTS; i++)
     {
-        if (centiV < StoreEE.BattParams[ct].VtoCapacities[i].voltage)
+        if (centiV < StoreEE.BattParams[ct].VtoCapacitiesHiDisch[i].voltage)
             break;
         j++;
     }
     if (j > 2) 
         j = 2;
     int iRemainingInt = map(centiV, 
-                            StoreEE.BattParams[ct].VtoCapacities[j].voltage, StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage, 
-                            StoreEE.BattParams[ct].VtoCapacities[j].capacity, StoreEE.BattParams[ct].VtoCapacities[j + 1].capacity);
+                            StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j].voltage, StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j + 1].voltage, 
+                            StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j].capacity, StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j + 1].capacity);
     capacityDebug = iRemainingInt;
     byte capacity = constrain(iRemainingInt, 0, 100);
 
     pointsUsed = j; // DEBUG REMOVE DOYET
-    vHiCurve  = StoreEE.BattParams[ct].VtoCapacities[j + 1].voltage;
-    vLowCurve = StoreEE.BattParams[ct].VtoCapacities[j].voltage;
+    vHiCurve  = StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j + 1].voltage;
+    vLowCurve = StoreEE.BattParams[ct].VtoCapacitiesHiDisch[j].voltage;
 
     return capacity;
 }
@@ -923,7 +958,7 @@ void handleLaptopInput(void)
     static uint8_t indexUserIn = 0;
     int inByte;
 
-    while (SERIALPORT_AVAILABLE())     // DBC.007
+    while SERIALPORT_AVAILABLE()     // DBC.007
     {
         inByte = SERIALPORT_READ();    // DBC.007
         if (doDebugPrints)
@@ -1146,6 +1181,20 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                         serialPtr->println(F("\nSaved new value(s) to Factory Default\n"));
                     }
                 }
+                else if (toupper(userIn[1]) == 'U')
+                {
+                    EEPROM.get(EEP_OFFSET_USER, StoreEE);       // Restore "User" EEPROM 
+                    serialPtr->println(F("\nRestored User Config\n"));
+                }
+                else if (toupper(userIn[1]) == 'F')
+                {
+                    serialPtr->println(F("\nFF to all EEPROM..."));
+                    for (uint16_t i = 0; i < EEPROM_END_ADDR; i++)
+                    {
+                        EEPROM.write(i, 0xFF);
+                    }
+                    serialPtr->println(F("Done"));
+                }
                 else
                 {
 
@@ -1157,11 +1206,11 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
             break;
 
 
-        //case '#':
-        //    {
-        //        watchDogReset();
-        //    }
-        //    break;
+        case '#':
+            {
+                watchDogReset();
+            }
+            break;
 
         case '~':
             dumpEEProm(serialPtr);
@@ -1258,7 +1307,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //serialPtr->println(F("  (V*100)"));
         serialPtr->println(F("Z   - Restore factory defaults"));
         serialPtr->println(F("ZCD - Restore compiled factory defaults"));
-        //serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
+        serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
 
         serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         serialPtr->print(F("Battery Voltage*100: ")); serialPtr->print(batVoltage);
@@ -1273,8 +1322,12 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(bDischarging ? "Y" : "N");
         serialPtr->print(F(", Status = 0x"));
         serialPtr->println(iPresentStatus, HEX);
+#if ENABLE_MEM_DISPLAYS
         serialPtr->print(F("Available Memory: "));
         serialPtr->println(freeMemory());
+        serialPtr->print(F("Unused Mem: "));
+        serialPtr->println(chkFreeMemory());
+#endif  //ENABLE_MEM_DISPLAYS
     }
 
 #if SHOW_ALL_PARAMS
@@ -1318,12 +1371,26 @@ void printCapacityConfig(Stream * serialPtr)
         serialPtr->print(F("shutdownVoltag: ")); serialPtr->println(StoreEE.BattParams[i].shutdownVoltage * StoreEE.battSysVMultiplier  );
         serialPtr->print(F("isChargingVolt: ")); serialPtr->println(StoreEE.BattParams[i].isChargingVolts);
         serialPtr->print(F("isDisChargingV: ")); serialPtr->println(StoreEE.BattParams[i].isDisChargingVolts);
-        serialPtr->println(F("Capacity Curve points:"));
 
-        for (uint8_t j = 0; j < StoreEE.BattParams[i].numCapacityPointsUsed; j++)
+        serialPtr->println(F("HiDisch Capacity Curve points:"));
+        for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
         {
-            serialPtr->print(F("Voltage: ")); serialPtr->print(StoreEE.BattParams[i].VtoCapacities[j].voltage * StoreEE.battSysVMultiplier);
-            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacities[j].capacity);
+            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].voltage * StoreEE.battSysVMultiplier);
+            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].capacity);
+        }
+
+        serialPtr->println(F("LowDisch Curve:"));
+        for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
+        {
+            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesLoDisch[j].voltage * StoreEE.battSysVMultiplier);
+            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesLoDisch[j].capacity);
+        }
+
+        serialPtr->println(F("Charge Curve:"));
+        for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
+        {
+            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesChrg[j].voltage * StoreEE.battSysVMultiplier);
+            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesChrg[j].capacity);
         }
     }
 }
@@ -1338,6 +1405,8 @@ void printHelp(Stream * serialPtr)
 #endif
     serialPtr->println(F("HC - Show Capacity configs"));
     serialPtr->println(F("Z  - Restore Factory Defaults"));
+    serialPtr->println(F("ZU - Restore User Config"));
+    serialPtr->println(F("#  - WDog Reset"));
     serialPtr->println("Size of StoreEE: " + String(sizeof(StoreEE)));
 }
 
@@ -1365,8 +1434,8 @@ void FactoryDefault(void)
 /*
 struct BatteryParams
 {
-    VtoCapacity VtoCapacities[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
-    uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacities[])
+    VtoCapacity VtoCapacitiesHiDisch[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
+    uint8_t     numCapacityPointsUsed;                  // number of points in capacity graph (VtoCapacitiesHiDisch[])
     uint16_t    batFullVoltage;                         // in hundredths of volts
     uint16_t    warningVoltage;                        // in hundredths of volts
     uint16_t    shutdownVoltage;                        // in hundredths of volts
@@ -1377,12 +1446,22 @@ struct BatteryParams
 };
 */
 
-const BatteryParams bp_ADM = {
-   1050,   0 ,          // VtoCapacities[NUM_CAPACITY_POINTS];
+const BatteryParams bp_AGM = {
+   1050,   0 ,          // VtoCapacitiesHiDisch[NUM_CAPACITY_POINTS];
    1151,  10 ,          //
    1275,  90 ,          //
    1282, 100 ,          // 
-   4,                   // numCapacityPointsUsed;             
+
+    1100,   0 ,          // VtoCapacitiesLoDisch[NUM_CAPACITY_POINTS];
+    1201,  10 ,          //
+    1325,  90 ,          //
+    1332, 100 ,          // 
+
+    1250,   0 ,          // VtoCapacitiesChrg[NUM_CAPACITY_POINTS];
+    1351,  10 ,          //
+    1475,  90 ,          //
+    1482, 100 ,          // 
+
    1380,                // batFullVoltage;       
    1250,                // warningVoltage;                    
    1240,                // shutdownVoltage;                   
@@ -1419,14 +1498,24 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LeadAcid].shutdownVoltage    = 1140;  // V*100, Bat Empty       
     StoreEE.BattParams[BC_LeadAcid].isChargingVolts    = 1288;  // V*100, Above this, must be charging
     StoreEE.BattParams[BC_LeadAcid].isDisChargingVolts = 1170;  // V*100, Below this, must be discharging
-    StoreEE.BattParams[BC_LeadAcid].numCapacityPointsUsed = NUM_CAPACITY_POINTS;    // # of points in voltage/capacity curve
+    //StoreEE.BattParams[BC_LeadAcid].numCapacityPointsUsed = NUM_CAPACITY_POINTS;    // # of points in voltage/capacity curve
     StoreEE.BattParams[BC_LeadAcid].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LeadAcid].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
-    // Voltages to Capacities mapping: AGM
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].voltage = 1162;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[0].capacity =  0;    // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].voltage = 1170;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[1].capacity =  10;   // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].voltage = 1278;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[2].capacity =  90;   // 
-    StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].voltage = 1288;  StoreEE.BattParams[BC_LeadAcid].VtoCapacities[3].capacity = 100;   // 
+    // Voltages to Capacities mapping: PbAcid
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[0].voltage = 1162;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[1].voltage = 1170;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[2].voltage = 1278;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[3].voltage = 1288;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesHiDisch[3].capacity = 100;   // 
+
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[0].voltage = 1162+50;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[1].voltage = 1170+50;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[2].voltage = 1278+50;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[3].voltage = 1288+50;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesLoDisch[3].capacity = 100;   // 
+
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[0].voltage = 1162+100;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[1].voltage = 1170+100;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[2].voltage = 1278+100;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[3].voltage = 1288+100;  StoreEE.BattParams[BC_LeadAcid].VtoCapacitiesChrg[3].capacity = 100;   // 
 
 
 #if false
@@ -1439,13 +1528,13 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_AGM].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_AGM].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: AGM
-    StoreEE.BattParams[BC_AGM].VtoCapacities[0].voltage = 1050;  StoreEE.BattParams[BC_AGM].VtoCapacities[0].capacity =  0;    // 
-    StoreEE.BattParams[BC_AGM].VtoCapacities[1].voltage = 1151;  StoreEE.BattParams[BC_AGM].VtoCapacities[1].capacity =  10;   // 
-    StoreEE.BattParams[BC_AGM].VtoCapacities[2].voltage = 1275;  StoreEE.BattParams[BC_AGM].VtoCapacities[2].capacity =  90;   // 
-    StoreEE.BattParams[BC_AGM].VtoCapacities[3].voltage = 1282;  StoreEE.BattParams[BC_AGM].VtoCapacities[3].capacity = 100;   // 
+    StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[0].voltage = 1050;  StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[0].capacity =  0;    // 
+    StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[1].voltage = 1151;  StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[2].voltage = 1275;  StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[2].capacity =  90;   // 
+    StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[3].voltage = 1282;  StoreEE.BattParams[BC_AGM].VtoCapacitiesHiDisch[3].capacity = 100;   // 
 #else
     // This saves 78 bytes of program space, takes up 28 more bytes of RAM (just for BC_AGM)
-    memcpy(&StoreEE.BattParams[BC_AGM], &bp_ADM, sizeof(StoreEE.BattParams[BC_AGM]));
+    memcpy(&StoreEE.BattParams[BC_AGM], &bp_AGM, sizeof(StoreEE.BattParams[BC_AGM]));
 #endif
 
     // LI_ION
@@ -1454,14 +1543,24 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LI_ION].shutdownVoltage    = 1240;   // V*100, Bat Empty                        
     StoreEE.BattParams[BC_LI_ION].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
     StoreEE.BattParams[BC_LI_ION].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
-    StoreEE.BattParams[BC_LI_ION].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    //StoreEE.BattParams[BC_LI_ION].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
     StoreEE.BattParams[BC_LI_ION].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LI_ION].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
-    // Voltages to Capacities mapping: LFP
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[1].capacity =  10;   // 
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].voltage = 1280;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[2].capacity =  20;   // 
-    StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].voltage = 1360;  StoreEE.BattParams[BC_LI_ION].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+    // Voltages to Capacities mapping: Li-Ion
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[0].voltage = 1000;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[1].voltage = 1200;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[2].voltage = 1280;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[3].voltage = 1360;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesHiDisch[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[0].voltage = 1000+50;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[1].voltage = 1200+50;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[2].voltage = 1280+50;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[3].voltage = 1360+50;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesLoDisch[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[0].voltage = 1000+100;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[1].voltage = 1200+100;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[1].capacity =  10;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[2].voltage = 1280+100;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[3].voltage = 1360+100;  StoreEE.BattParams[BC_LI_ION].VtoCapacitiesChrg[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
 
     // LFP
     StoreEE.BattParams[BC_LFP].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
@@ -1469,14 +1568,24 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LFP].shutdownVoltage    = 1240;   // V*100, Bat Empty                        
     StoreEE.BattParams[BC_LFP].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
     StoreEE.BattParams[BC_LFP].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
-    StoreEE.BattParams[BC_LFP].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
+    //StoreEE.BattParams[BC_LFP].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
     StoreEE.BattParams[BC_LFP].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LFP].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
     // Voltages to Capacities mapping: LFP
-    StoreEE.BattParams[BC_LFP].VtoCapacities[0].voltage = 1000;  StoreEE.BattParams[BC_LFP].VtoCapacities[0].capacity =   0;   // Use more resolution at low end of curve
-    StoreEE.BattParams[BC_LFP].VtoCapacities[1].voltage = 1200;  StoreEE.BattParams[BC_LFP].VtoCapacities[1].capacity =   9;   // 
-    StoreEE.BattParams[BC_LFP].VtoCapacities[2].voltage = 1290;  StoreEE.BattParams[BC_LFP].VtoCapacities[2].capacity =  20;   // 
-    StoreEE.BattParams[BC_LFP].VtoCapacities[3].voltage = 1350;  StoreEE.BattParams[BC_LFP].VtoCapacities[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[0].voltage = 1000;  StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[1].voltage = 1200;  StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[1].capacity =   9;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[2].voltage = 1290;  StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[3].voltage = 1350;  StoreEE.BattParams[BC_LFP].VtoCapacitiesHiDisch[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[0].voltage = 1000+50;  StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[1].voltage = 1200+50;  StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[1].capacity =   9;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[2].voltage = 1290+50;  StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[3].voltage = 1350+50;  StoreEE.BattParams[BC_LFP].VtoCapacitiesLoDisch[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
+
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[0].voltage = 1000+100;  StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[0].capacity =   0;   // Use more resolution at low end of curve
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[1].voltage = 1200+100;  StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[1].capacity =   9;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[2].voltage = 1290+100;  StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[2].capacity =  20;   // 
+    StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[3].voltage = 1350+100;  StoreEE.BattParams[BC_LFP].VtoCapacitiesChrg[3].capacity = 100;   // Actual: 99%=13.4, 100%=13.6
 
     memcpy(&StoreEE.BattParams[BC_Other], &StoreEE.BattParams[BC_AGM], sizeof(StoreEE.BattParams[BC_AGM]));   // Init "Other" too
 
@@ -1507,6 +1616,8 @@ void enableDebugPrints(uint8_t debugPrBits)
     doDebugPrints      = bitRead(debugPrBits, DBG_PRINT_MAIN     ) ? true : false;   // 0    // 0x01 Turn off debug printing for this file
 }
 
+
+#if ENABLE_MEM_DISPLAYS
 //
 // Used in calculating free memory.
 //
@@ -1517,8 +1628,65 @@ extern void *__brkval;
 //
 int freeMemory() 
 {
-	int free_memory;
-	if ((int) __brkval)
-		return ((int) &free_memory) - ((int) __brkval);
-	return ((int) &free_memory) - ((int) &__bss_end);
+    int free_memory;
+    if ((int) __brkval)
+        return ((int) &free_memory) - ((int) __brkval);
+    return ((int) &free_memory) - ((int) &__bss_end);
+
 }
+
+#define MEM_FILL_PAT 0x55
+void fillFreeMemory() 
+{
+	int free_memory = ((int)__brkval) + 1;
+    if ((int)__brkval)
+    {
+        for (; free_memory < (((int)&free_memory) -1); free_memory++)
+        {
+            * (uint8_t *)free_memory = MEM_FILL_PAT;
+        }
+    }
+}
+
+int chkFreeMemory() 
+{
+    int unusedCount = 0;
+	int free_memory = ((int)__brkval);
+    if ((int)__brkval)
+    {
+        for (; free_memory < (int)&free_memory; free_memory++)
+        {
+            if (*(uint8_t *)free_memory == MEM_FILL_PAT)
+            {
+                unusedCount++;
+            }
+            else if (unusedCount)   // On any interruption of the pattern, once we see it, stop counting
+                break;
+        }
+    }
+
+    return unusedCount;
+}
+#endif //ENABLE_MEM_DISPLAYS
+
+#if USE_WATCHDOG
+void watchDogReset(void)
+{
+   Serial.println("Forcing Reset via Watch Dog");
+   //int countdownMS = 
+   Watchdog.enable(200);
+   //Serial.print("Enabled the watchdog countdown of ");
+   //Serial.print(countdownMS, DEC);
+   //Serial.println(" milliseconds!");
+   //Serial.println();
+   //uint32_t startWDR = millis();
+
+   while (true)
+   {
+      delay(50);
+      //Serial.print(millis() - startWDR, DEC);
+      Serial.println(".");
+   }
+}
+#endif
+

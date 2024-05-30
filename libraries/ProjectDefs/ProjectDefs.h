@@ -5,7 +5,7 @@
 
 
 //#define SERIAL1_DEBUG       true    // Prints some USB connection info
-#define SERIAL1_IRQ_DEBUG   true    // IRQ code prints via a buffer which gets printed in loop()
+//#define SERIAL1_IRQ_DEBUG   true    // IRQ code prints via a buffer which gets printed in loop()
 //
 #if SERIAL1_IRQ_DEBUG
     #define SIZE_USBDebug 400

@@ -581,13 +581,13 @@ int USB_RecvControl(void* d, int len)
 static u8 SendInterfaces()
 {
 	u8 interfaces = 0;
-	u8 cdcInterfaces = 0;                 // DBC.008b
+	//u8 cdcInterfaces = 0;                 // DBC.008b
 
 #ifdef CDC_ENABLED
   if (USBCDCNeeded)                                            // DBC.008d Switch is pressed
 	{                                                            // DBC.008
 	CDC_GetInterface(&interfaces);
-		cdcInterfaces = interfaces;     // DBC.008b     SLR NOTE: cdcInterfaces is never used
+		//cdcInterfaces = interfaces;     // DBC.008b     SLR NOTE: cdcInterfaces is never used
 	}                                   // DBC.008
 #endif
 

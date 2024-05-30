@@ -40,7 +40,17 @@ void setup()
 {
     // initialize the serial port:
     Serial.begin(115200);
+    delay(100);
     Serial.println(F("Starting..., delay 1 second..."));
+    Serial.print(F("Size of EEPROM: "));
+    Serial.println(EEPROM_END_ADDR);
+
+    Serial1.begin(115200);
+    delay(100);
+    Serial1.println(F("Starting..., delay 1 second..."));
+    Serial1.print(F("Size of EEPROM: "));
+    Serial1.println(EEPROM_END_ADDR);
+
     delay(1000);
 
     for (uint16_t i=0; i<EEPROM_END_ADDR; i++)

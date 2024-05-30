@@ -1,0 +1,30 @@
+
+
+With SERIAL1_IRQ_DEBUG and SERIAL1_DEBUG not defined:
+Sketch uses 26640 bytes (92%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1181 bytes (46%) of dynamic memory, leaving 1379 bytes for local variables. Maximum is 2560 bytes.
+Waiting for upload port...
+Upload port found on COM34
+
+With SERIAL1_IRQ_DEBUG defined as true:
+Sketch uses 27534 bytes (96%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1683 bytes (65%) of dynamic memory, leaving 877 bytes for local variables. Maximum is 2560 bytes.
+
+After adding Watchdog, SERIAL1_IRQ_DEBUG and SERIAL1_DEBUG not defined::
+Sketch uses 27880 bytes (97%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1458 bytes (56%) of dynamic memory, leaving 1102 bytes for local variables. Maximum is 2560 bytes.
+Waiting for upload port...
+Upload port found on COM34
+
+-- 
+
+Without Ram usage detection:
+Sketch uses 27728 bytes (96%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1456 bytes (56%) of dynamic memory, leaving 1104 bytes for local variables. Maximum is 2560 bytes.
+Waiting for upload port...
+Upload port found on COM30
+
+With Ram usage detection:
+Sketch uses 28060 bytes (97%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1458 bytes (56%) of dynamic memory, leaving 1102 bytes for local variables. Maximum is 2560 bytes.
+Waiting for upload port...
