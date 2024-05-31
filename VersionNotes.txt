@@ -1,3 +1,17 @@
+Version 2025-05-31
+    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
+    and suppress other printouts. (mostly works)
+
+    Time remaining reported to host is in seconds. For large (slow discharge) system, report max of 18 hours
+        so to not overflow 16-bit seconds value.
+
+    Have VtoCapacity for run-time calc's. Compute it from lo and Hi discharge curves & capacity in minutes.
+    Recompute on any change. User can edit curve, save in EEPROM. No need to change compiled curves(?).
+
+    Use a charge curve when charging.
+
+    Check actual used RAM via pattern in RAM. (turn on at compile time)
+
 Version 2024-05-16:
   Config: Cmd to turn en/dis telling PC to shut off while doing calibration,               
   en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities

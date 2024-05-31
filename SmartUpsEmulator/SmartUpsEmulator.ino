@@ -22,11 +22,18 @@ Design Notes:
 Sid's To Do:
 
   Done: 
+    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
+    and suppress other printouts. (mostly works)
+
     Time remaining reported to host is in seconds. For large (slow discharge) system, report max of 18 hours
         so to not overflow 16-bit seconds value.
 
     Have VtoCapacity for run-time calc's. Compute it from lo and Hi discharge curves & capacity in minutes.
     Recompute on any change. User can edit curve, save in EEPROM. No need to change compiled curves(?).
+
+    Use a charge curve when charging.
+
+    Check actual used RAM via pattern in RAM. (turn on at compile time)
 
     Check actual used RAM via pattern in RAM.
 
@@ -61,9 +68,6 @@ Not Yet:
     Should we say 100% charged if stays at charging voltage for x minutes?
 
     Verify voltage multiplier working everywhere
-
-    Cmd for printing voltage in Serial Plotter mode? (properly formatted CSV),
-    and suppress other printouts.
     
     Add commands for changing battery parameters -> Curves
 
@@ -122,7 +126,7 @@ HandyHelpers MH; // My Handy Helper
 #define MINUPDATEINTERVAL   10
 
 
-int iIntTimer = 0;
+uint16_t iIntTimer = 0;
 bool SerialIsInitialized = false;
 
 #define SEND_INITIAL_RPT false      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
@@ -296,6 +300,7 @@ struct EEPROM_Struct
     uint16_t              iAvgTimeToFull  ;     // in seconds
     uint16_t              iAvgTimeToEmpty ;     // in seconds
     uint16_t              iRemainTimeLimit;     // in seconds
+    uint16_t              reportIntervalSecs;   // in seconds
     BatteryChemistryType  BatChem;              // Lead Acid, LFP, AGM, Other
     uint8_t               battSysVMultiplier;   // 1/2/3/4 for 12, 24, 36, 48 (V must be divisible by 12v)
     uint8_t               reportingHysteresis;  // mV diff before reporting/printing a change
@@ -592,25 +597,29 @@ void loop(void)
                 static uint16_t prevRunTimeToEmptyInternal  = 7200;
                 static uint16_t prevPresentStatusInternal   = 0;
 
-                if ((iPresentStatusInternal != prevPresentStatusInternal) || (iRemainingInternal != prevRemainingInternal) || (iRunTimeToEmptyInternal != prevRunTimeToEmptyInternal) || (iIntTimer > MINUPDATEINTERVAL))
+                if ((iPresentStatusInternal != prevPresentStatusInternal) || (iRemainingInternal != prevRemainingInternal) || (iRunTimeToEmptyInternal != prevRunTimeToEmptyInternal) || (iIntTimer > StoreEE.reportIntervalSecs))
                 {
                     Stream *serialPtr = SERIALPORT_Addr;
 
+                    if (!doVoltageGraphOutput)
+                    {
+
 #if SHOW_CURVEPTS_USED
-                    SERIALPORT_PRINT(F("CrvUsed: "));  // DEBUG REMOVE DOYET
-                    SERIALPORT_PRINT(pointsUsed);  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(F("CrvUsed: "));  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(pointsUsed);  // DEBUG REMOVE DOYET
 
-                    SERIALPORT_PRINT(F(" LowV: "));  // DEBUG REMOVE DOYET
-                    SERIALPORT_PRINT(vLowCurve);  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(F(" LowV: "));  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(vLowCurve);  // DEBUG REMOVE DOYET
 
-                    SERIALPORT_PRINT(F(" HiV: "));  // DEBUG REMOVE DOYET
-                    SERIALPORT_PRINT(vHiCurve);  // DEBUG REMOVE DOYET
-                    SERIALPORT_PRINT(F(", "));  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(F(" HiV: "));  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(vHiCurve);  // DEBUG REMOVE DOYET
+                        SERIALPORT_PRINT(F(", "));  // DEBUG REMOVE DOYET
 #endif
 
-                    SERIALPORT_PRINT(F("# Sensed: "));
+                        SERIALPORT_PRINT(F("# Sensed: "));
 
-                    printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, iPresentStatusInternal);     // Print Remaining minutes,
+                        printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, iPresentStatusInternal);     // Print Remaining minutes,
+                    }
 
                     prevPresentStatusInternal  = iPresentStatusInternal ;
                     prevRunTimeToEmptyInternal = iRunTimeToEmptyInternal;
@@ -631,7 +640,7 @@ void loop(void)
 
             //************ Bulk send or interrupt ***********************
 
-            if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > MINUPDATEINTERVAL))
+            if ((iPresentStatus != iPreviousStatus) || (iRemaining != iPrevRemaining) || (iRunTimeToEmpty != iPrevRunTimeToEmpty) || (iIntTimer > StoreEE.reportIntervalSecs))
             {
 
 #if SEND_UPDATE_RPTS
@@ -1191,6 +1200,8 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     }
                     break;
 
+                case 'R': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 60000, StoreEE.reportIntervalSecs, F("Report to host every seconds")); break;
+
                 default:
                     serialPtr->print(F("ERROR: Bad Time command: "));
                     serialPtr->println(userIn);
@@ -1398,7 +1409,9 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100): ")); serialPtr->print(StoreEE.calibPointHigh.voltage  * StoreEE.battSysVMultiplier); serialPtr->println(F(" V*100"));
         serialPtr->print(F("         (High V A2D value: "));                    serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
         serialPtr->print(F("                           iRemnCapacityLimit: ")); serialPtr->print(StoreEE.iRemnCapacityLimit); serialPtr->println(F(")"));
-        serialPtr->print(F("BYnn   - delta centi-Volts before reporing   : ")); serialPtr->println(StoreEE.reportingHysteresis);
+        serialPtr->print(F("BYnn   - delta centi-Volts before reporting  : ")); serialPtr->println(StoreEE.reportingHysteresis);
+        serialPtr->print(F("TRnn   - Report every nn seconds             : ")); serialPtr->println(StoreEE.reportIntervalSecs);
+        serialPtr->print(F("Dx     - Debug flags (in hexadecimal)        : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         //serialPtr->println(F(" To calibrate voltage sensing for this board:"));
         //serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
         //serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
@@ -1412,7 +1425,6 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("ZCD - Restore compiled factory defaults"));
         serialPtr->println(F("ZSF - Save Factory defaults (Factory use only)"));
 
-        serialPtr->print(F("Dx   - Debug flags              : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
         //serialPtr->print(F("Battery Voltage*100: ")); serialPtr->print(batVoltage);
 #if SHOW_CURVEPTS_USED
         serialPtr->print(F(", capacityDebug: ")); serialPtr->print(capacityDebug);
@@ -1606,10 +1618,11 @@ void FactoryCompiledDefault(void)
     StoreEE.iAvgTimeToFull     = 120*60;
     StoreEE.iAvgTimeToEmpty    = 120*60;
     StoreEE.iRemainTimeLimit   =  5*60;
+    StoreEE.reportIntervalSecs =  10;
 
     StoreEE.BatChem            = BC_AGM;
     StoreEE.battSysVMultiplier = 1;     // 1:12V
-    StoreEE.reportingHysteresis = 8;    // 8 mV
+    StoreEE.reportingHysteresis = 2;    // 8 mV
     
 
     // Lead-Acid
