@@ -48,3 +48,41 @@ Global variables use 1479 bytes (57%) of dynamic memory, leaving 1081 bytes for 
 --Fixed above
 Sketch uses 27616 bytes (96%) of program storage space. Maximum is 28672 bytes.
 Global variables use 1481 bytes (57%) of dynamic memory, leaving 1079 bytes for local variables. Maximum is 2560 bytes.
+
+CSV Output; seconds, voltage, Seconds left, % left
+Sketch uses 27884 bytes (97%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1483 bytes (57%) of dynamic memory, leaving 1077 bytes for local variables. Maximum is 2560 bytes.
+
+-- Config user curve, half implemented:
+Sketch uses 28558 bytes (99%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1499 bytes (58%) of dynamic memory, leaving 1061 bytes for local variables. Maximum is 2560 bytes.
+114 free
+
+-- Disabled CSV ability - Freed 584 of flash
+Sketch uses 27974 bytes (97%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1497 bytes (58%) of dynamic memory, leaving 1063 bytes for local variables. Maximum is 2560 bytes.
+698 free
+
+---Combined some prints into one function call
+Sketch uses 27936 bytes (97%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1497 bytes (58%) of dynamic memory, leaving 1063 bytes for local variables. Maximum is 2560 bytes.
+
+-- User can config User Discharge Capacity Curve:
+Sketch uses 28262 bytes (98%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1513 bytes (59%) of dynamic memory, leaving 1047 bytes for local variables. Maximum is 2560 bytes
+
+Combined some prints in capacity curve printing
+Sketch uses 28180 bytes (98%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1513 bytes (59%) of dynamic memory, leaving 1047 bytes for local variables. Maximum is 2560 bytes.
+
+Fixed voltage multiplier (added where missed before):
+Sketch uses 28238 bytes (98%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1513 bytes (59%) of dynamic memory, leaving 1047 bytes for local variables. Maximum is 2560 bytes.
+
+Don't allow system voltage of 36:
+Sketch uses 28198 bytes (98%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1513 bytes (59%) of dynamic memory, leaving 1047 bytes for local variables. Maximum is 2560 bytes.
+
+Added BL command, more testing/fixing:
+Sketch uses 28256 bytes (98%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1513 bytes (59%) of dynamic memory, leaving 1047 bytes for local variables. Maximum is 2560 bytes.

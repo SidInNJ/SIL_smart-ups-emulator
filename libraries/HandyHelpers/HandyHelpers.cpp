@@ -224,7 +224,7 @@ bool HandyHelpers::updateFromUserInput(char *userIn, uint8_t& indexUserIn, int& 
                 m_serialPtr->print(F("0x"));
             }
             m_serialPtr->println(val, base);
-            m_serialPtr->println(F("Don't forget to (S)ave the new value!"));
+            printSaveReminder();
             rc = true;
         }
         indexUserIn = 0;
@@ -284,7 +284,7 @@ bool HandyHelpers::updateFromUserInput_8or16(char *userIn, uint8_t &indexUserIn,
                 m_serialPtr->print(F("0x"));
             }
             m_serialPtr->println(val, base);
-            m_serialPtr->println(F("Don't forget to (S)ave the new value!"));
+            printSaveReminder();
             rc = true;
         }
         indexUserIn = 0;
@@ -321,7 +321,7 @@ bool HandyHelpers::updateFromUserInput(char *userIn, uint8_t &indexUserIn, int &
             m_serialPtr->print(varName );
             m_serialPtr->print(F(" set to: "));
             m_serialPtr->println(varLocn_bool);
-            m_serialPtr->println(F("Don't forget to (S)ave the new value!"));
+            printSaveReminder();
             rc = true;
         }
         indexUserIn = 0;
@@ -365,9 +365,10 @@ bool HandyHelpers::updateIndex_16bit(char *userIn, uint8_t &indexUserIn, int &in
                 m_serialPtr->print(newIndex );
                 m_serialPtr->print(F(" of "));
                 m_serialPtr->print(varName );
-                m_serialPtr->println(F(" set to: "));
-                m_serialPtr->print(val);
-                m_serialPtr->println(F("Don't forget to (S)ave the new value!"));
+                m_serialPtr->print(F(" set to: "));
+                m_serialPtr->println(val);
+                printSaveReminder();
+                
                 rc = true;
             }
         }
@@ -375,6 +376,7 @@ bool HandyHelpers::updateIndex_16bit(char *userIn, uint8_t &indexUserIn, int &in
     }
     return rc;
 }
+
 
 // Convert IP Address string into 32 bit IP address. 
 // Optional valStrOffset is normally 1 unless it is a 2 char command ("EG192.168.1.1" for Ethernet Gateway)
@@ -403,7 +405,8 @@ void HandyHelpers::UserIPAddressEntry(char userIn[MAX_MENU_CHARS], uint8_t &inde
             m_serialPtr->print(F("\nNew IP Address     : "));
             printParsedNumberEndian(destIpAddr, 4, '.');
             //destIpAddr.printTo(SERIALPORT);
-            m_serialPtr->println(F("\nMust Save and power-cycle/reset (#) to take effect."));
+            printSaveReminder();
+            m_serialPtr->println(F(" and power-cycle/reset (#) to take effect."));
             eeAddressStorage = destIpAddr;    // Get 32 bit IP address
         }
     }
@@ -521,7 +524,7 @@ bool HandyHelpers::updateFromUserInputWFields(char userIn[MAX_MENU_CHARS], uint8
                 printParsedNumber(priorVal, numFields, delim);
                 m_serialPtr->print(F("\nNew: "));
                 printParsedNumber(eeAddressStorage, numFields, delim);
-                m_serialPtr->println(F("\nDon't forget to (S)ave the new value!"));
+                printSaveReminder();
                 rc = true;
             }
         }
@@ -710,6 +713,11 @@ void toHexString(char str[], uint16_t num)
             str[len - (i + 1)] = rem - 10 + 'A';
     }
     str[len] = '\0';
+}
+
+void HandyHelpers::printSaveReminder(void)
+{
+    m_serialPtr->println(F("Don't forget to (S)ave the new value!"));
 }
 
 

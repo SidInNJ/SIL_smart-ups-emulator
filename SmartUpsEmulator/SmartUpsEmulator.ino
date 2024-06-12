@@ -6,6 +6,9 @@
  *            Blue LED will light up
  *            Press and hold switch on pin 2 at bootup to run as HID device and enable CDC serial input/output on USB serial port
  *            Release switch when green LED lights up
+ * 
+ *   For Sid, set Arduino IDE to point to: c:\Users\User\Documents\GitHub\SIL_smart-ups-emulator
+ * 
 */
 
 /*
@@ -35,7 +38,6 @@ Sid's To Do:
 
     Check actual used RAM via pattern in RAM. (turn on at compile time)
 
-    Check actual used RAM via pattern in RAM.
 
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
@@ -62,28 +64,38 @@ Sid's To Do:
  
     Determine Charge vs Discharge via voltage history
 
-Not Yet: 
-    Via commands, Simulate battery voltage for easy PC comm testing
-
-    Should we say 100% charged if stays at charging voltage for x minutes?
-
-    Verify voltage multiplier working everywhere
-    
-    Add commands for changing battery parameters -> Curves
-
     3 Curves per chemistry? Discharge high rate, low rate, Charging
-    
-    Config of UPS name/# (value is 2 or 3?) <-- Need this?
 
+Done, Test Yet:
+    Add commands for changing battery parameters -> Curves
+    Verify voltage multiplier working everywhere
+
+
+Not Yet:
+    Free up Flash space.
+        Move EEROM init to seperate .INO file?
+            Run that INO once, then load the normal program?
+
+    Via commands, Simulate battery voltage for easy PC comm testing
+               
     Perhaps:
         In PC mode (CDC Enabled), allow config cmds over Serial1 also
             (handy for edge connector automation / Factory automated calibration)
         Cmd to switch between internal or external AREF
             (Put a 5k resistor in series with the pin to protect internal source)
+
+        Config of UPS name/# (value is 2 or 3?) <-- Need this?
             Could instead/also short another pin to ground to indicate external (PCB version).
 
+Open Questions:
 
-    Open Questions:
+        Should we look at rate of voltage drop, try to sense the low-voltage "knee" and do shutoff then?
+        Use the  rate of voltage drop to determine the discharge curve to use?
+
+     Lesser Questions:
+
+        Should we say 100% charged if stays at charging voltage for x minutes?
+
         Are Charge and Discharge mutually exclusive, or can it be neither if no charging and no load?
         Should we have a specific voltage: Above this V, assume charging.
         How do we determine if we started charging, or a higher voltage is just
@@ -134,7 +146,8 @@ bool SerialIsInitialized = false;
 //#define SEND_INITIAL_RPT true      // Should we volunteer the UPS/Battery status, vs. waiting for host query. False=Don't volunteer
 #define SEND_UPDATE_RPTS true
 
-#define SHOW_ALL_PARAMS true      // Def to enable cmd 'P' to dump all parameters
+#define SHOW_ALL_PARAMS true      // Def to enable cmd 'HP' to dump all parameters
+//#define USE_CSV_OUTPUT  true      // Def to enable cmd 'D2' to print CSV format: seconds, voltage, Seconds left, % left
 
 #define USE_WATCHDOG        true   // 
 
@@ -599,8 +612,8 @@ void loop(void)
 
                 if ((iPresentStatusInternal != prevPresentStatusInternal) || (iRemainingInternal != prevRemainingInternal) || (iRunTimeToEmptyInternal != prevRunTimeToEmptyInternal) || (iIntTimer > StoreEE.reportIntervalSecs))
                 {
+#if USE_CSV_OUTPUT
                     Stream *serialPtr = SERIALPORT_Addr;
-
                     if (!doVoltageGraphOutput)
                     {
 
@@ -618,8 +631,9 @@ void loop(void)
 
                         SERIALPORT_PRINT(F("# Sensed: "));
 
-                        printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage, iPresentStatusInternal);     // Print Remaining minutes,
+                        printValues(serialPtr, iRemainingInternal, iRunTimeToEmptyInternal, batVoltage * StoreEE.battSysVMultiplier, iPresentStatusInternal);     // Print Remaining minutes,
                     }
+#endif //USE_CSV_OUTPUT
 
                     prevPresentStatusInternal  = iPresentStatusInternal ;
                     prevRunTimeToEmptyInternal = iRunTimeToEmptyInternal;
@@ -658,7 +672,7 @@ void loop(void)
                 {
                     SERIALPORT_PRINT(F("Sending: "));
 
-                    printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage, iPresentStatus);     // Print Remaining minutes,
+                    printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage * StoreEE.battSysVMultiplier, iPresentStatus);     // Print Remaining minutes,
 
                     SERIALPORT_PRINT(F("Comms with PC (neg=bad): "));
 
@@ -681,13 +695,20 @@ void loop(void)
                     SERIALPORT_PRINTLN(iRes);
                 }
 
+#if USE_CSV_OUTPUT
                 if (doVoltageGraphOutput)
                 {
-                    SERIALPORT_PRINT(millis()/1000);    // Print seconds and voltage in CSV format for graphing
+                    SERIALPORT_PRINT(millis()/1000);            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
                     SERIALPORT_PRINT(",");
-                    SERIALPORT_PRINTLN(batVoltageInternal);
+                    SERIALPORT_PRINT(batVoltageInternal * StoreEE.battSysVMultiplier);       // Volts
+                    SERIALPORT_PRINT(",");
+                    SERIALPORT_PRINT(iRunTimeToEmptyInternal);  // Run time left in seconds
+                    SERIALPORT_PRINT(",");
+                    SERIALPORT_PRINT(iRemainingInternal);       // Batter left i n%
+                    SERIALPORT_PRINT(",");
+                    SERIALPORT_PRINTLN(bCharging ? "C" : "D");  // Charging or Discharging
                 }
-
+#endif
                 //DBPRINTLN(F("Sent bat status to PC"));
                 //}
                 digitalWrite(PIN_LOGIC_TRIG, HIGH); //  Trig'd on low going edge, back to high 
@@ -722,7 +743,7 @@ void loop(void)
         if (!doVoltageGraphOutput)
         {
             DBPRINT(F("BatV*100: "));
-            DBPRINTLN(batVoltage);
+            DBPRINTLN(batVoltage * StoreEE.battSysVMultiplier);
             //SERIALPORT_PRINT("BatV*100:: ");  // DBC.008
             //SERIALPORT_PRINTLN(batVoltage);  // DBC.008
 
@@ -904,7 +925,7 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
             SERIALPORT_PRINT(F("Shutdown now! Rtte seconds="));
             SERIALPORT_PRINT(iRunTimeToEmptyInternal);
             SERIALPORT_PRINT(F(", BatV="));
-            SERIALPORT_PRINTLN(batVoltageInternal);
+            SERIALPORT_PRINTLN(batVoltageInternal * StoreEE.battSysVMultiplier);
             //SERIALPORT_Addr->flush();
             //delay(500);
 
@@ -1023,7 +1044,7 @@ void printValues(Stream *serialPtr, byte iRemaining, uint16_t iRunTimeToEmpty, u
     serialPtr->print(F(":"));
     serialPtr->print(iRunTimeToEmpty % 60);
     serialPtr->print(F(", BatV Internal: "));    // DEBUG Remove these 2 lines eventually
-    serialPtr->print(batVoltageInternal);       // DEBUG Remove these 2 lines 
+    serialPtr->print(batVoltageInternal * StoreEE.battSysVMultiplier);       // DEBUG Remove these 2 lines
     serialPtr->print(F(", BatV: "));
     serialPtr->print(batV);
     serialPtr->print(F(", Status = 0x"));
@@ -1140,7 +1161,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                 }
                 if (!goodCmd)
                 {
-                    serialPtr->print(F("ERROR: Bad ENable command command: "));
+                    serialPtr->print(F("ERROR: Bad ENable command: "));
                     serialPtr->println(userIn);
                 }
             }
@@ -1160,7 +1181,16 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     }
                 break;
                 //case 'W': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].warningVoltage, F("Warn at V"      )); break;
-                case 'D': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 7000, StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage, F("Shutdown at Battery V"      )); break;
+                case 'D':
+                    {
+                        uint16_t voltsTemp = StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage  * StoreEE.battSysVMultiplier;
+                        if (MH.updateFromUserInput(userIn + 1, indexUserIn, inByte, 7000, voltsTemp, F("Shutdown at Battery V")))
+                        {
+                            StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage = voltsTemp / StoreEE.battSysVMultiplier;
+                        }
+
+                    }
+                    break;
                 case 'C': 
                     {   MH.updateFromUserInput(userIn+1, indexUserIn, inByte, (uint8_t)BC_Last, (uint8_t&)StoreEE.BatChem, F("Bat Chemistry: 0=PbAc 1=Li-Ion 2=LFP 3=AGM")); 
                         // Calculate single v to capacity curve by interpolating between hi and low discharge curves for present battery chemistry
@@ -1168,8 +1198,50 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     }
                     break; 
 
-                case 'V': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 4, (uint8_t&)StoreEE.battSysVMultiplier, F("1=12V 2=24V 4=48V"), false, 1); break;
+                case 'S': 
+                    {
+                        uint16_t multTemp = (uint8_t)StoreEE.battSysVMultiplier;
+                        if (MH.updateFromUserInput(userIn + 1, indexUserIn, inByte, 4, multTemp, F("1=12V 2=24V 4=48V"), false, 1) && multTemp != 3)
+                        {
+                            StoreEE.battSysVMultiplier = multTemp;
+                        }
+                        else
+                        {
+                            serialPtr->print(F("Bad Multiplier. Still: : "));
+                            serialPtr->println((uint8_t)StoreEE.battSysVMultiplier);
+
+                        }
+                    }
+                    break;
                 case 'Y': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 100, StoreEE.reportingHysteresis, F("Bat V Hysteresis before reporting")); break;
+                case 'L': MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 90, StoreEE.iRemnCapacityLimit, F("Low Capacity % Limit")); break;
+
+
+                // User Discharge Curve: change voltage and capacity for a point on the curve 
+                case 'V': 
+                    {
+                        uint8_t indx;
+                        uint16_t newValue;
+                        if (MH.updateIndex_16bit(userIn + 1, indexUserIn, inByte, 3, 8000, indx, newValue, "Curve Row, Volts"))
+                        {
+                            StoreEE.VtoCapacitiesUser[indx].voltage = newValue / StoreEE.battSysVMultiplier;
+                        }
+                    }
+                break;
+                //
+                case 'P': 
+                    {
+                        uint8_t indx;
+                        uint16_t newValue;
+                        //updateIndex_16bit(char *userIn, uint8_t &indexUserIn, int &inByte, uint8_t maxIndex, uint16_t maxAllowableValue, uint8_t &memNum_8, uint16_t &varLocn_16, const char *varName)
+                        //MH.updateIndex_16bit(userIn, indexUserIn, inByte, 4, 1023, slotNum, newValue, "Car present ambient light threshold");
+                        if (MH.updateIndex_16bit(userIn + 1, indexUserIn, inByte, 3, 100, indx, newValue, "Curve Row, %"))
+                        {
+                            StoreEE.VtoCapacitiesUser[indx].capacity = newValue;
+                        }
+                    }
+                break;
+
                 default:
                     serialPtr->print(F("ERROR: Bad B (Battery) command: "));
                     serialPtr->println(userIn);
@@ -1263,7 +1335,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                     break;
 
                 default:
-                      printHelp(serialPtr);  // DBC.007
+                    printHelp(serialPtr);  // DBC.007
                     break;                                         // DBC.007
                 }
             }
@@ -1342,16 +1414,16 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //    serialPtr->println(F("Set all of EEPROM to FF"));
         //    break;
 
-        case 'N':
-            {
-                switch ((char)toupper(userIn[1]))
-                {
-                default:
-                    serialPtr->println(F("Bad command. Should be NL or NH"));
-                    break;
-                }
-            }
-            break;
+        //case 'N':
+        //    {
+        //        switch ((char)toupper(userIn[1]))
+        //        {
+        //        default:
+        //            serialPtr->println(F("Bad command. Should be NL or NH"));
+        //            break;
+        //        }
+        //    }
+        //    break;
 
         case 'Q':  // DBC.008
             {                                              // DBC.008
@@ -1398,20 +1470,24 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         serialPtr->println(F("BCn    - Battery Chemistry"));
         serialPtr->print(F("             0=PbAc 1=Li-Ion 2=LFP 3=AGM     : ")); serialPtr->println(StoreEE.BatChem);
         serialPtr->print(F("TMnnnn - System design capacity in Minutes   : ")); serialPtr->println(StoreEE.dischRateMinutes);
-        serialPtr->print(F("BVn    - Bat System Volts 1=12V 2=24V 4=48V  : ")); serialPtr->println(StoreEE.battSysVMultiplier);
+        serialPtr->print(F("BSn    - Bat System Volts 1=12V 2=24V 4=48V  : ")); serialPtr->println(StoreEE.battSysVMultiplier);
         serialPtr->print(F("BFnnnn - Battery Full Charge voltage  (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].batFullVoltage * StoreEE.battSysVMultiplier);
         //serialPtr->print(F("BWnnnn - Battery Warning voltage        (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].warningVoltage);
         serialPtr->print(F("BDnnnn - Shut Down at battery voltage (V*100): ")); serialPtr->println(StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage * StoreEE.battSysVMultiplier);
+        serialPtr->print(F("BLnn   = Host may shutdown at Low Capacity % : ")); serialPtr->println(StoreEE.iRemnCapacityLimit); 
         serialPtr->print(F("TSnnnn - Shut down at this many minutes left : ")); serialPtr->println(StoreEE.iRemainTimeLimit/60  );
         //serialPtr->print(F("TDnnnn - Ave. Time for full Discharge (minutes): ")); serialPtr->println(StoreEE.iAvgTimeToEmpty/60 );      // DOYET FIX
-        serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100) : ")); serialPtr->print(StoreEE.calibPointLow.voltage  * StoreEE.battSysVMultiplier); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("CLnnnn - Calibrate low voltage point (V*100) : ")); serialPtr->println(StoreEE.calibPointLow.voltage  * StoreEE.battSysVMultiplier);
         serialPtr->print(F("         (Low V A2D value: "));                     serialPtr->print(StoreEE.calibPointLow.a2dValue); serialPtr->println(F(")"));
-        serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100): ")); serialPtr->print(StoreEE.calibPointHigh.voltage  * StoreEE.battSysVMultiplier); serialPtr->println(F(" V*100"));
+        serialPtr->print(F("CHnnnn - Calibrate high voltage point (V*100): ")); serialPtr->println(StoreEE.calibPointHigh.voltage  * StoreEE.battSysVMultiplier); 
         serialPtr->print(F("         (High V A2D value: "));                    serialPtr->print(StoreEE.calibPointHigh.a2dValue); serialPtr->println(F(")"));
-        serialPtr->print(F("                           iRemnCapacityLimit: ")); serialPtr->print(StoreEE.iRemnCapacityLimit); serialPtr->println(F(")"));
         serialPtr->print(F("BYnn   - delta centi-Volts before reporting  : ")); serialPtr->println(StoreEE.reportingHysteresis);
         serialPtr->print(F("TRnn   - Report every nn seconds             : ")); serialPtr->println(StoreEE.reportIntervalSecs);
         serialPtr->print(F("Dx     - Debug flags (in hexadecimal)        : 0x")); serialPtr->println(StoreEE.debugFlags, HEX);
+        serialPtr->println(F("User Discharge Capacity Curve:"));
+        serialPtr->println(F("BVn,nn - Point#(0-3), Volts*100"));
+        serialPtr->println(F("BPn,nn - Point#(0-3), % caPacity"));
+
         //serialPtr->println(F(" To calibrate voltage sensing for this board:"));
         //serialPtr->println(F("  Disconnect the battery voltage sense leads from the battery.  "));
         //serialPtr->println(F("  Short them together. Enter the command CL0 (Zero, not Oh)."));
@@ -1429,7 +1505,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
 #if SHOW_CURVEPTS_USED
         serialPtr->print(F(", capacityDebug: ")); serialPtr->print(capacityDebug);
 #endif
-        printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage, iPresentStatus);
+        printValues(serialPtr, iRemaining, iRunTimeToEmpty, batVoltage * StoreEE.battSysVMultiplier, iPresentStatus);
         //serialPtr->print(F(", Batt Remaining = "));
         //serialPtr->print(iRemaining);
         //serialPtr->print(F("%, "));
@@ -1472,10 +1548,17 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
         //serialPtr->print(F("CPCTYGRANULARITY2: ")); serialPtr->println(bCapacityGranularity2      );
         //serialPtr->print(F("IDEVICECHEMISTRY : ")); serialPtr->println(STRING_DEVICECHEMISTRY );  // These are in flash
         //serialPtr->print(F("IOEMINFORMATION  : ")); serialPtr->println(STRING_OEMVENDOR       );
-        serialPtr->print(F("batVoltage       : ")); serialPtr->println(batVoltage             );
+        serialPtr->print(F("batVoltage       : ")); serialPtr->println(batVoltage * StoreEE.battSysVMultiplier);
         serialPtr->print(F("iPresentStatus   : 0x")); serialPtr->println(iPresentStatus, HEX  );
     }
 #endif
+
+void printVoltsCapacity(Stream * serialPtr, uint8_t point, uint16_t volts, uint16_t capacity)
+{
+    serialPtr->print(F("Point "));       serialPtr->print(point);
+    serialPtr->print(F(": Volts*100: ")); serialPtr->print(volts * StoreEE.battSysVMultiplier);
+    serialPtr->print(F(" = Capacity: ")); serialPtr->println(capacity);
+}
 
 void printCapacityConfig(Stream * serialPtr)
 {
@@ -1495,30 +1578,25 @@ void printCapacityConfig(Stream * serialPtr)
         serialPtr->println(F("HiDisch Capacity Curve points:"));
         for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
         {
-            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].voltage * StoreEE.battSysVMultiplier);
-            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].capacity);
+            printVoltsCapacity(serialPtr, j, StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].voltage, StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].capacity);
         }
 
         serialPtr->println(F("LowDisch Curve:"));
         for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
         {
-            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesLoDisch[j].voltage * StoreEE.battSysVMultiplier);
-            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesLoDisch[j].capacity);
+            printVoltsCapacity(serialPtr, j, StoreEE.BattParams[i].VtoCapacitiesLoDisch[j].voltage, StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].capacity);
         }
 
         serialPtr->println(F("Charge Curve:"));
         for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
         {
-            serialPtr->print(F("Volts: "));         serialPtr->print(StoreEE.BattParams[i].VtoCapacitiesChrg[j].voltage * StoreEE.battSysVMultiplier);
-            serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.BattParams[i].VtoCapacitiesChrg[j].capacity);
+            printVoltsCapacity(serialPtr, j, StoreEE.BattParams[i].VtoCapacitiesChrg[j].voltage, StoreEE.BattParams[i].VtoCapacitiesHiDisch[j].capacity);
         }
     }
     serialPtr->println(F("\n\rUser Discharge Curve:"));
     for (uint8_t j = 0; j < NUM_CAPACITY_POINTS; j++)
     {
-        serialPtr->print(F("Volts: "));
-        serialPtr->print(StoreEE.VtoCapacitiesUser[j].voltage * StoreEE.battSysVMultiplier);
-        serialPtr->print(F(" = Capacity: ")); serialPtr->println(StoreEE.VtoCapacitiesUser[j].capacity);
+        printVoltsCapacity(serialPtr, j, StoreEE.VtoCapacitiesUser[j].voltage, StoreEE.VtoCapacitiesUser[j].capacity);
     }
 }
 
@@ -1556,25 +1634,6 @@ void FactoryDefault(void)
 {
     EEPROM.get(EEP_OFFSET_FACTORY, StoreEE); // Fetch our structure of non-volitale vars from "Factory Default" EEPROM
 }
-
-
-/*
-struct BatteryParams
-{
-    VtoCapacity VtoCapacitiesHiDisch[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
-    VtoCapacity VtoCapacitiesLoDisch[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
-    VtoCapacity VtoCapacitiesChrg[NUM_CAPACITY_POINTS];     // Points on discharge curve for interpolating capacity
-    uint16_t    batFullVoltage;                         // in hundredths of volts
-    uint16_t    warningVoltage;                        // in hundredths of volts
-    uint16_t    shutdownVoltage;                        // in hundredths of volts
-    uint16_t    isChargingVolts;                        // in hundredths of volts: Above this v, must be charging
-    uint16_t    isDisChargingVolts;                     // " " ": Below this v, must be discharging
-    uint16_t    iCalcdTimeToEmpty;                      // Runtime calculated time to empty from full
-    uint16_t    hiRateDichargeMins;                     // Minutes to discharge at High rate
-    uint16_t    loRateDichargeMins;                     // Minutes to discharge at Low rate
-    uint8_t     timeToEmptyCalcState;                   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
-};
-*/
 
 const BatteryParams bp_AGM = {
     1050,   0,          // VtoCapacitiesHiDisch[NUM_CAPACITY_POINTS];

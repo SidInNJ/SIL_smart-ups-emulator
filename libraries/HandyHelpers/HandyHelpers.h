@@ -252,6 +252,7 @@ public:
     void setSerialOutputStream(Stream *serialPtr = SERIALPORT_Addr) {m_serialPtr = serialPtr;}
     void resetSerialOutputStream(void) { m_serialPtr = SERIALPORT_Addr; }
     Stream* serPtr(void) { return m_serialPtr; }    // use as: MH.serPtr()->print(F("Hi"));
+    void printSaveReminder(void);
 
 private:
     Stream *m_serialPtr; // Pointer to the Serial output device being used (Serial, Serial3, NeoSWSerial)
