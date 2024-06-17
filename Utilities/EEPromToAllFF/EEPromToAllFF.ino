@@ -1,21 +1,8 @@
 #include "HandyHelpers.h"
 
-//// For the EEProm functions 
-// 
-// Below now defined in Maltbie_Helper.h
-//  
-//#if defined(__AVR_ATmega2560__)
-//#define uP_EEPROM_SIZE 0x1000  // 4k  (Actual, but most released with it set to 2k)
-//#endif
-//
-//#if defined(__AVR_ATmega328P__)
-//#define uP_EEPROM_SIZE 0x400   // 1k (actual size of EEPROM)
-////#define uP_EEPROM_SIZE 0x200   // 512 - usable size if compile problems
-//#endif
-//
 
 // Below used by the dump function and EEPromRestore.ino
-// In case not defined in this project's Maltbie_Helper.h
+// In case not defined in this project's HandyHelpers.h
 #ifndef EEPROM_END_ADDR
     #if defined(__AVR_ATmega2560__) || defined(ARDUINO_TEENSY35) || defined(ARDUINO_TEENSY36)
         #define EEPROM_END_ADDR 0x1000  // 4k (actual size of EEPROM) of Mega 2560, Teensy 3.5, Teensy 3.6
