@@ -96,4 +96,7 @@ Sketch uses 26714 bytes (93%) of program storage space. Maximum is 28672 bytes.
 Global variables use 1449 bytes (56%) of dynamic memory, leaving 1111 bytes for local variables. Maximum is 2560 bytes.
 1958 free!
 
+Not sure what changed, but just before removing String() calls.
+Sketch uses 26826 bytes (93%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1449 bytes (56%) of dynamic memory, leaving 1111 bytes for local variables. Maximum is 2560 bytes.
 

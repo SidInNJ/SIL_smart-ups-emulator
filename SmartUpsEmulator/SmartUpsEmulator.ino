@@ -155,8 +155,8 @@ bool SerialIsInitialized = false;
 
 #define USE_WATCHDOG        true   // 
 
-//#define ENABLE_FACTORY_INITIALIZATION true
-#define ENABLE_FACTORY_INITIALIZATION false
+#define ENABLE_FACTORY_INITIALIZATION true
+//#define ENABLE_FACTORY_INITIALIZATION false
 
 // For Debug/integrity verification
 //#define ENABLE_MEM_DISPLAYS true   //   Show remaining RAM, calculated and via pattern fill/stomped on
@@ -495,8 +495,9 @@ void setup(void)
     SERIALPORT_PRINTLN(iRes);
     SERIALPORT_PRINT(F("Sending initial all-good report. iRemaining: "));
     SERIALPORT_PRINT(F(iRemaining));
-    SERIALPORT_PRINT(F(", Status Bits: 0x"
-    SERIALPORT_PRINTLN(String(iPresentStatus, HEX));
+    SERIALPORT_PRINT(F(", Status Bits: 0x"));
+    //SERIALPORT_PRINTLN(String(iPresentStatus, HEX));
+    SERIALPORT_PRINTLN(iPresentStatus, HEX);
 
     SERIALPORT_PRINTLN(F(PROG_NAME_VERSION));
     SERIALPORT_PRINTLN(F(__FILE__));               // Print name of the source file
@@ -1533,7 +1534,8 @@ void printHelp(Stream * serialPtr)
 #endif //ENABLE_FACTORY_INITIALIZATION
     serialPtr->println(F("ZU - Restore User Config"));
     serialPtr->println(F("#  - WDog Reset"));
-    serialPtr->println("Size of StoreEE: " + String(sizeof(StoreEE)));
+    serialPtr->print(F("Size of StoreEE: "));
+    serialPtr->println(sizeof(StoreEE));
 }
 
 void printBatTypeStr(Stream *serialPtr, BatteryChemistryType typ)

@@ -1,7 +1,7 @@
 //  Helper Functions
 
 #include "HandyHelpers.h"
-#include <string.h>
+//#include <string.h>       // Don't need for SmartUpsEmulator project
 
 
 uint16_t HandyHelpers::anaFilter_ms(uint8_t AnaInChan, uint16_t ms) // 100ms: 6 full-waves of AC power at 60Hz, 5 at 50Hz.
@@ -168,12 +168,12 @@ bool HandyHelpers::updateFromUserInput(char *userIn, uint8_t &indexUserIn, int &
         if (maxAllowableValue > 255)
         {
             m_serialPtr->print(F("PROGRAMMING ERROR: Max value for updateFromUserInput too large for uint_8 variable. Provided max was: "));
-            m_serialPtr->println(String(maxAllowableValue));
+            m_serialPtr->println(maxAllowableValue);
         }
         if (minVal>=maxAllowableValue)
         {
             m_serialPtr->print(F("PROGRAMMING ERROR: Max value <= Min Value for updateFromUserInput. Provided min was: "));
-            m_serialPtr->println(String(minVal));
+            m_serialPtr->println(minVal);
         }
         return false;
     }
@@ -213,7 +213,7 @@ bool HandyHelpers::updateFromUserInput(char *userIn, uint8_t& indexUserIn, int& 
                 m_serialPtr->print(F("0x"));
             }
 
-            m_serialPtr->println(String(varLocn_16, base));
+            m_serialPtr->println(varLocn_16, base);
             varLocn_16 = val;
 
             m_serialPtr->print(F("New "));
@@ -267,12 +267,12 @@ bool HandyHelpers::updateFromUserInput_8or16(char *userIn, uint8_t &indexUserIn,
 
             if (is8bit)
             {
-                m_serialPtr->println(String(varLocn_8, base));
+                m_serialPtr->println(varLocn_8, base);
                 varLocn_8 = val;
             } 
             else
             {
-                m_serialPtr->println(String(varLocn_16, base));
+                m_serialPtr->println(varLocn_16, base);
                 varLocn_16 = val;
             }
 
@@ -313,7 +313,7 @@ bool HandyHelpers::updateFromUserInput(char *userIn, uint8_t &indexUserIn, int &
         else
         {
             m_serialPtr->print(F("Old value was: "));
-            m_serialPtr->println(String(varLocn_bool));
+            m_serialPtr->println(varLocn_bool);
 
             varLocn_bool = val;
             
@@ -358,7 +358,7 @@ bool HandyHelpers::updateIndex_16bit(char *userIn, uint8_t &indexUserIn, int &in
             {
                 memNum_8 = newIndex;    // Caller will set actual values in place
     
-                m_serialPtr->println(String(val));
+                m_serialPtr->println(val);
                 varLocn_16 = val;
     
                 m_serialPtr->print(F("Member "));
@@ -418,10 +418,11 @@ void HandyHelpers::printParsedBytes(uint8_t *byteArray, uint8_t numFields, char 
     int8_t i=0;
     for (; i<(numFields-1); i++)
     {
-        m_serialPtr->print(String(byteArray[i], base) + delim);
+        m_serialPtr->print(byteArray[i], base);
+        m_serialPtr->print(delim);
     }
 
-    m_serialPtr->print(String(byteArray[i], base));  
+    m_serialPtr->print(byteArray[i], base);  
 }
 
 void HandyHelpers::printParsedNumber(uint32_t num, uint8_t numFields, char delim)
@@ -436,12 +437,13 @@ void HandyHelpers::printParsedNumber(uint32_t num, uint8_t numFields, char delim
         if (numFields>i)
         {
             uint32_t numField = num >> (i*8);
-            m_serialPtr->print(String(numField) + delim);
+            m_serialPtr->print(numField);
+            m_serialPtr->print(delim);
             num -= numField << (i*8);
         }
     }
 
-    m_serialPtr->print(String(num));  
+    m_serialPtr->print(num);  
 }
 
 void HandyHelpers::printParsedNumberEndian(uint32_t num, uint8_t numFields, char delim)
@@ -453,11 +455,12 @@ void HandyHelpers::printParsedNumberEndian(uint32_t num, uint8_t numFields, char
 
     for (int8_t i=0; i<(numFields-1); i++)
     {
-            m_serialPtr->print(String(num & 0xFF) + delim);
-            num = num >> 8;
+        m_serialPtr->print(num & 0xFF);
+        m_serialPtr->print(delim);
+        num = num >> 8;
     }
 
-    m_serialPtr->print(String(num));  
+    m_serialPtr->print(num);  
 }
 
 // Divide by 10 and print with tenths: 123 prints as "12.3". Good for storing # accurate to 10ths by multiplying it by 10.
@@ -607,7 +610,7 @@ bool HandyHelpers::uint32FromStringOfFields(const char *numString, uint32_t &des
         if (showErrors)
         {
             m_serialPtr->print(F("Error: Too few number fields! Fields seen:"));
-            m_serialPtr->println(String(dots));
+            m_serialPtr->println(dots);
         }
         return false;
     }
