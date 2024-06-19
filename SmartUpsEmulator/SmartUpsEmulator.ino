@@ -38,7 +38,6 @@ Sid's To Do:
 
     Check actual used RAM via pattern in RAM. (turn on at compile time)
 
-
     Config: Cmd to turn en/dis telling PC to shut off while doing calibration,
     en/dis for normal UPS Emulation mode. With PC reporting disabled, also set the capacities
     to 100% so that the PC queries return good capacities and dont put PCs to sleep.
@@ -69,14 +68,17 @@ Sid's To Do:
     Add commands for changing battery parameters -> Curves
     Verify voltage multiplier working everywhere
 
-Done, Test Yet:
-
-
-
-Not Yet:
     Free up Flash space.
         Move EEROM init to seperate .INO file?
             Run that INO once, then load the normal program?
+
+Done, Test Yet:
+
+Not Yet:
+
+    Remove calls to String() to free up space & hopefully put EEPROM init back in.
+
+    Capture discharge curve for an AGM battery at 2 discharge rates.
 
     Via commands, Simulate battery voltage for easy PC comm testing
                
