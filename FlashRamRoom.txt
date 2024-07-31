@@ -100,3 +100,16 @@ Not sure what changed, but just before removing String() calls.
 Sketch uses 26826 bytes (93%) of program storage space. Maximum is 28672 bytes.
 Global variables use 1449 bytes (56%) of dynamic memory, leaving 1111 bytes for local variables. Maximum is 2560 bytes.
 
+-- With String() calls removed, but still not doing EEPROM init:
+ketch uses 26030 bytes (90%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1431 bytes (55%) of dynamic memory, leaving 1129 bytes for local variables. Maximum is 2560 bytes.
+
+--With EEPROM init back in:
+Sketch uses 27228 bytes (94%) of program storage space. Maximum is 28672 bytes. (1444 bytes of program space left)
+Global variables use 1495 bytes (58%) of dynamic memory, leaving 1065 bytes for local variables. Maximum is 2560 bytes.
+1444 Bytes of Flash Free!
+
+turned CSV dump back on:
+Sketch uses 27886 bytes (97%) of program storage space. Maximum is 28672 bytes. (786 bytes of program space left)
+Global variables use 1497 bytes (58%) of dynamic memory, leaving 1063 bytes for local variables. Maximum is 2560 bytes.
+

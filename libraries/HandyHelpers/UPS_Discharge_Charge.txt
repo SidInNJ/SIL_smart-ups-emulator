@@ -1,0 +1,20 @@
+
+41,1350,683,2628,73,C
+43,1350,683,2628,73,C
+
+----Menu----
+
+Smart UPS Emulator v0.1
+Compiled at: Jul  9 2024, 20:30:44
+
+Present Settings:
+Enable reporting/Shutdown to to the PC 
+   (0=No PC reporting/shutdown. 1=Enabled)
+ENCn   - While in Config mode                : 0
+ENRn   - While in Normal run mode            : 0
+BCn    - Battery Chemistry
+             0=PbAc 1=Li-Ion 2=LFP 3=AGM     : 3
+TMnnnn - System design capacity in Minutes   : 60
+BSn    - Bat System Volts 1=12V 2=24V 4=48V  : 1
+BFnnnn - Battery Full Charge voltage  (V*100): 1380
+

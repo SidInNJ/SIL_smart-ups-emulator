@@ -72,13 +72,15 @@ Sid's To Do:
         Move EEROM init to seperate .INO file?
             Run that INO once, then load the normal program?
 
+    Remove calls to String() to free up space & hopefully put EEPROM init back in.
+
 Done, Test Yet:
 
 Not Yet:
 
-    Remove calls to String() to free up space & hopefully put EEPROM init back in.
-
     Capture discharge curve for an AGM battery at 2 discharge rates.
+
+    Use discharge rate to determine discharge curve to use.
 
     Via commands, Simulate battery voltage for easy PC comm testing
                
@@ -151,7 +153,7 @@ bool SerialIsInitialized = false;
 #define SEND_UPDATE_RPTS true
 
 #define SHOW_ALL_PARAMS true      // Def to enable cmd 'HP' to dump all parameters
-//#define USE_CSV_OUTPUT  true      // Def to enable cmd 'D2' to print CSV format: seconds, voltage, Seconds left, % left
+#define USE_CSV_OUTPUT  true      // Def to enable cmd 'D2' to print CSV format: seconds, voltage, Seconds left, % left
 
 #define USE_WATCHDOG        true   // 
 
@@ -293,6 +295,7 @@ Status_HID_Comm status_HID = stat_Disabled;
 Stream *serPtr = SERIALPORT_Addr;
 int batVoltage = 1300;
 int batVoltageInternal = 1300;
+int anaValue = 0x1FF;   // Mid range of Analog input 
 
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
@@ -652,6 +655,8 @@ void loop(void)
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(batVoltageInternal * StoreEE.battSysVMultiplier);       // Volts
                     SERIALPORT_PRINT(",");
+                    SERIALPORT_PRINT(anaValue);                 // Bare analog reading
+                    SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(iRunTimeToEmptyInternal);  // Run time left in seconds
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(iRemainingInternal);       // Batter left i n%
@@ -787,11 +792,12 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
 
     // DOYET Replace:
     // Do noise resistant reading of battery voltage
-    int anaValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);       // 
+    anaValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 500);       // 
 
-    //if (true)
-    //{
-    batVoltageInternal = map(anaValue, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
+    //batVoltageInternal = map(anaValue, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
+
+    #define RES_MUL 8
+    batVoltageInternal = map(anaValue*RES_MUL, StoreEE.calibPointLow.a2dValue*RES_MUL, StoreEE.calibPointHigh.a2dValue*RES_MUL, StoreEE.calibPointLow.voltage*RES_MUL, StoreEE.calibPointHigh.voltage*RES_MUL)/RES_MUL;
     if (batVoltageInternal < 0) batVoltageInternal = 0;
 
     // Determine if charging or discharging:
