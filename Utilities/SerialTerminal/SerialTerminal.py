@@ -1,4 +1,13 @@
 #!/usr/bin/python
+
+# Serial Terminal Program for SIL Smart-UPS Configuration 
+# and Battery profile loggins
+# 
+# To Do:
+#   
+#   Make .EXE file
+# 
+
 import time
 import serial
 import sys
@@ -22,67 +31,69 @@ LookForBoard = 'Leonardo'
 parser = argparse.ArgumentParser()
 parser.add_argument("-t", "--timestamps", action="store_true",
                     help="put timestamps in log file")
-parser.add_argument("-b", "--boardname", action="store", default=LookForBoard,
+parser.add_argument("-n", "--boardname", action="store", default=LookForBoard,
                     help="Specify a board name to look for (in case you have multiple Arduino boards attached)")
+parser.add_argument("-b", "--baudrate", action="store", default=115200, type=int,
+                    help="baud rate in bps ie. 9600, 38400, (115200)")
+parser.add_argument("-f", "--logfile", action="store", default='SmartUPSLog.txt', 
+                    help="Output Log file name (include extension: ie. .TXT)")
+parser.add_argument("-c", "--comport", action="store", default='NoneGiven', 
+                    help="Serial port name: ie. COM6")
 args = parser.parse_args()
 
-LookForBoard = args.boardname
-print('Board name to look for: ')
-print(LookForBoard)
-print('\n')
+if args.comport == 'NoneGiven':
+    LookForBoard = args.boardname
+    print('Board name to look for: ', end =" ")
+    print(LookForBoard)
 
-# got these lines of code from: https://stackoverflow.com/questions/24214643/python-to-automatically-select-serial-ports-for-arduino
-arduino_ports = [
-    p.device
-    for p in serial.tools.list_ports.comports()
-    if LookForBoard in p.description  # may need tweaking to match new arduinos
-]
+    # got these lines of code from: https://stackoverflow.com/questions/24214643/python-to-automatically-select-serial-ports-for-arduino
+    arduino_ports = [
+        p.device
+        for p in serial.tools.list_ports.comports()
+        if LookForBoard in p.description  # may need tweaking to match new arduinos
+    ]
 
-# Derived and enhanced from: https://stackoverflow.com/questions/24214643/python-to-automatically-select-serial-ports-for-arduino
-ports = list(serial.tools.list_ports.comports())
-for aPort in ports:
-    print(aPort[1])
-    #if 'Arduino' in aPort[1]:
-    #if 'Mega 2560' in aPort[1]:
-    if LookForBoard in aPort[1]:
-        #ArduinoDescription = aPort[2]
-        ArduinoDescription = aPort[1]
-        #break
-    if 'USB Serial Device' in aPort[1]:
-        #TeensyDescription = aPort[2]
-        TeensyDescription = aPort[1]
-        #break
+    # Derived and enhanced from: https://stackoverflow.com/questions/24214643/python-to-automatically-select-serial-ports-for-arduino
+    ports = list(serial.tools.list_ports.comports())
+    print('Board(s) Found: ')
+    for aPort in ports:
+        print('   ', end =" ")
+        print(aPort[1])
+        if LookForBoard in aPort[1]:
+            ArduinoDescription = aPort[1]
+        if 'USB Serial Device' in aPort[1]:
+            TeensyDescription = aPort[1]    # Note: this isn't used!
 
-if not arduino_ports:
-    print('No Arduino found. Aborting...')
-    time.sleep(2)
-    raise IOError("No Arduino found")
+    if not arduino_ports:
+        print('No Arduino found. Aborting...')
+        time.sleep(2)
+        raise IOError("No Arduino found")
 
-if len(arduino_ports) == 1:
-    print('1 Arduino found. Good!')
-    time.sleep(2)
-    #raise IOError("Only 1 Arduino found - Need 2")
+    if len(arduino_ports) == 1:
+        print('One', end =" ")
+        print(LookForBoard, end =" ")
+        print('found. Good!')
+        time.sleep(2)
 
-if len(arduino_ports) > 1:
-    warnings.warn('WARNING: More than 1 Arduino found')
+    if len(arduino_ports) > 1:
+        warnStr = 'WARNING: More than 1 ' + LookForBoard + ' found!'
+        warnings.warn(warnStr)
 
-inPortName = arduino_ports[0]       # this works if only one Uno/Mega Arduino
-#outPortName = arduino_ports[1]
+    inPortName = arduino_ports[0]       # this works if only one Uno/Mega Arduino
+else:
+    inPortName = args.comport
+    if LookForBoard != args.boardname:
+        print ('WARNING: Supplied board name ignored since COM port name supplied.')
 
-#inPortName = 'COM87' #      # i7   # Don't need if "inPortName = arduino_ports[0]" above works
-#inPortName = 'COM7' #      # i5
 
-#outPortName = 'COM15'
-#outPortName = 'COM77'  #Metro Express Grand Central (Couldn't get to work)
-
-print ('Getting input from COM port')
-sys.stdout.flush()
+print ('Getting input from COM port', end =" ")
+#sys.stdout.flush()
 
 print (inPortName)
 sys.stdout.flush()
 
 try:
-    arduinoPort = serial.Serial( inPortName, baudrate=115200 )
+    arduinoPort = serial.Serial( inPortName, baudrate=args.baudrate )
     #print ('Description of Input Teensy: ', TeensyDescription)
     sys.stdout.flush()
 except Exception as inst:
@@ -93,13 +104,13 @@ except Exception as inst:
     time.sleep(3)
     sys.exit(0)
 
-print ('Sending output to COM port', inPortName)
-#arduinoPort = serial.Serial( outPortName, baudrate=57600 )
-print ('Description of In/Output Arduino: ', ArduinoDescription)
+print ('Communicating on serial port', inPortName)
+
+
 sys.stdout.flush()
 
 # Log Arduino output to a file
-fLog = open("ArduinoLog.txt", "a")
+fLog = open(args.logfile, "a")
 fLog.write("\n------- Starting Log at: ")
 now = datetime.now() # current date and time
 date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
@@ -122,38 +133,18 @@ fLog.write("\n")
 #print ('Will Log everything to ', logFileName    #)
 #print ('Will Log Serial Numbers and Results to ', logSerialNumFileName    #)
 
-print ('Starting...')
+print ('Serial Terminal Starting...')
 sys.stdout.flush()
 
-#arduinoPort.open()
-sys.stdout.flush()
+#print ('Serial Port open state:', arduinoPort.isOpen())
 
-print ('In Port open state:', arduinoPort.isOpen())
+print ('ESC key - Exits Serial Terminal')
 
-#arduinoPort.open()
-sys.stdout.flush()
-
-print ('Out Port open state:', arduinoPort.isOpen())
-sys.stdout.flush()
-
-print ('\nCommands accepted by TestPoller:')
-#print ('G - Sends GRON and ALWAYS to the Arduino, turns off polling and lets the Arduino feed')
-#print ('    readings and graphical output to the PC screen.')
-#print ('F - Turns off graphing by the Arduino and turns polling back on.')
-#print ('I - put a message in the log files: "------- User Input: About to Intentionally Inject a Fault...".')
-print ('ESC key - Exits TestPoller')
-##print ('T, WDR and ? commands are passed through to the Arduino\n')
-#print ('? commands are passed through to the Arduino\n')
 if args.timestamps:
-    print ('Will put timestamps in the logfile')
+    print ('Will put timestamps in the logfile and on screen.')
 
 sys.stdout.flush()
 
-print ('Sleeping to give time for boot up...')
-print ('Will Send chars from Arduion to the screen...')
-sys.stdout.flush()
-
-timeout_start = time.time()
 
 doPolling = True
 inString = ''
@@ -166,7 +157,7 @@ sys.stdout.flush()
 
 lastMsgTime = int(time.time_ns() / 1000)
 
-print("ver 1.1")
+#print("ver 1.1")
 
 b1Val = 11
 b2Val = 127 + 11
@@ -179,10 +170,15 @@ timeBetweenMsgs = 2200
 lastSecondTimer = int(time.time_ns() / 1000000)
 needTimeStamp = args.timestamps
 
+unFlushedChars = False
+timeout_start = time.time()
+
 while 1 :
 
     if arduinoPort.inWaiting() > 0:
         chr = arduinoPort.read(1)
+        unFlushedChars = True
+        timeout_start = time.time()
         #sys.stdout.write(chr)      # gives error: TypeError: write() argument must be str, not bytes
         if needTimeStamp and not ((ord(chr) == 0x0D)  or (ord(chr) == 0x0A)):
             now = datetime.now() # current date and time
@@ -205,10 +201,12 @@ while 1 :
             needTimeStamp = args.timestamps
 
 
-
     if msvcrt.kbhit():
         #sys.stdin.getch()
         key = msvcrt.getch()
+        unFlushedChars = True
+        timeout_start = time.time()
+
         #if ((key == ord(27)) or (key == 'q'):  # ESC?
         if ((ord(key) == 27)  or (key == b'q')): # ESC?
             print('Aborted by ESC')
@@ -256,5 +254,11 @@ while 1 :
             inString = ''
             needTimeStamp = args.timestamps
             #arduinoPort.write('\r')
+
+    if unFlushedChars and time.time() > timeout_start + 0.4:     # If it has been quiet for a while:
+        fLog.close()                        # Close log file to flush for external editor access
+        fLog = open(args.logfile, "a")      # Reopen so we can add more
+        #print('Debug: Just closed and reopened the log file')
+        unFlushedChars = False
 
 
