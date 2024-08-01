@@ -19,3 +19,13 @@ SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest.kicad_sch
 *.vpwhistxml
 *.vtg
 SIL_Smart-UPS_Emulator.vpwwildcardcache
+
+Utilities/SerialTerminal/build/*
+Utilities/SerialTerminal/StartSerialTerminal_TimeStamp_Pool.bat
+Utilities/SerialTerminal/*.txt
+Utilities/SerialTerminal/dist/*.txt
+Utilities/SerialTerminal/dist/SerialTerminal/*.txt
+Utilities/SerialTerminal/StartSerialTerminal_TimeStamp_Pool.bat
+Utilities/SerialTerminal/ArduinoLog.txt
+
+

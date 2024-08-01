@@ -87,27 +87,24 @@ else:
 
 
 print ('Getting input from COM port', end =" ")
-#sys.stdout.flush()
+print (inPortName, flush=True)
 
-print (inPortName)
-sys.stdout.flush()
 
 try:
     arduinoPort = serial.Serial( inPortName, baudrate=args.baudrate )
     #print ('Description of Input Teensy: ', TeensyDescription)
-    sys.stdout.flush()
+    #sys.stdout.flush()
 except Exception as inst:
     print(type(inst))
     print(inst.args)
     print('Something have the serial port to the Arduino open; like the Arduino IDE?')
-    sys.stdout.flush()
+    #sys.stdout.flush()
     time.sleep(3)
     sys.exit(0)
 
 print ('Communicating on serial port', inPortName)
 
 
-sys.stdout.flush()
 
 # Log Arduino output to a file
 fLog = open(args.logfile, "a")
@@ -134,7 +131,7 @@ fLog.write("\n")
 #print ('Will Log Serial Numbers and Results to ', logSerialNumFileName    #)
 
 print ('Serial Terminal Starting...')
-sys.stdout.flush()
+#sys.stdout.flush()
 
 #print ('Serial Port open state:', arduinoPort.isOpen())
 
@@ -143,7 +140,7 @@ print ('ESC key - Exits Serial Terminal')
 if args.timestamps:
     print ('Will put timestamps in the logfile and on screen.')
 
-sys.stdout.flush()
+#sys.stdout.flush()
 
 
 doPolling = True
@@ -153,7 +150,7 @@ countOfTimeouts = 0
 
 print ('Ready... ')
 
-sys.stdout.flush()
+#sys.stdout.flush()
 
 lastMsgTime = int(time.time_ns() / 1000)
 
@@ -184,12 +181,18 @@ while 1 :
             now = datetime.now() # current date and time
             date_time = now.strftime("%H:%M:%S - ")
             fLog.write(date_time)
-            sys.stdout.flush()
-            print(date_time, end ='')
-            sys.stdout.flush()
+            #sys.stdout.flush()
+            print(date_time, end ='', flush=True)
+            #sys.stdout.flush()
 
-        sys.stdout.buffer.write(chr)
-        sys.stdout.flush()
+        if (ord(chr) == 0x0A):
+            print()         # cause flush
+        else:
+            sChar = chr.decode(encoding)
+            print(sChar, end ='', flush=True)
+            #sys.stdout.buffer.write(chr)
+
+        #sys.stdout.flush()
         needTimeStamp = False
         try:
             sChar = chr.decode(encoding)
