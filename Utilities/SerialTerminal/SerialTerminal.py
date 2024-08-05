@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser(description='Serial Terminal that auto-connects
 parser.add_argument("-t", "--timestamps", action="store_true",
                     help="put timestamps in log file")
 parser.add_argument("-n", "--boardname", action="store", default=LookForBoard,
-                    help="Specify a board name to look for (in case you have multiple Arduino boards attached)")
+                    help="Specify a board name to look for (use for other than a Leonardo)")
 parser.add_argument("-b", "--baudrate", action="store", default=115200, type=int,
                     help="baud rate in bps ie. 9600, 38400, (115200)")
 parser.add_argument("-f", "--logfile", action="store", default='SmartUPSLog.txt', 
