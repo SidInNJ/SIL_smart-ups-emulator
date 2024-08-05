@@ -28,7 +28,7 @@ LookForBoard = 'Leonardo'
 #logFileName = 'SensorReadLog.txt'
 #logSerialNumFileName = 'SN_Log.txt'
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='Serial Terminal that auto-connects to a Smart-UPS and logs to the file SmartUPSLog.txt. Tap H and Enter for help from the Smart-UPS.')
 parser.add_argument("-t", "--timestamps", action="store_true",
                     help="put timestamps in log file")
 parser.add_argument("-n", "--boardname", action="store", default=LookForBoard,
@@ -172,36 +172,58 @@ timeout_start = time.time()
 
 while 1 :
 
-    if arduinoPort.inWaiting() > 0:
-        chr = arduinoPort.read(1)
-        unFlushedChars = True
-        timeout_start = time.time()
-        #sys.stdout.write(chr)      # gives error: TypeError: write() argument must be str, not bytes
-        if needTimeStamp and not ((ord(chr) == 0x0D)  or (ord(chr) == 0x0A)):
-            now = datetime.now() # current date and time
+    try:
+        if arduinoPort.inWaiting() > 0:
+            chr = arduinoPort.read(1)
+            unFlushedChars = True
+            timeout_start = time.time()
+            #sys.stdout.write(chr)      # gives error: TypeError: write() argument must be str, not bytes
+            if needTimeStamp and not ((ord(chr) == 0x0D)  or (ord(chr) == 0x0A)):
+                now = datetime.now() # current date and time
+                date_time = now.strftime("%H:%M:%S - ")
+                fLog.write(date_time)
+                #sys.stdout.flush()
+                print(date_time, end ='', flush=True)
+                #sys.stdout.flush()
+
+            if (ord(chr) == 0x0A):
+                print()         # cause flush
+            else:
+                try:
+                    sChar = chr.decode(encoding)
+                    print(sChar, end ='', flush=True)
+                except:
+                    print('<?>', end ='', flush=True)
+                #sys.stdout.buffer.write(chr)
+
+            #sys.stdout.flush()
+            needTimeStamp = False
+            try:
+                sChar = chr.decode(encoding)
+            except:
+                sChar = '?' #.encode(encoding)
+
+            fLog.write(sChar)
+            if ((ord(chr) == 0x0D)  or (ord(chr) == 0x0A)): # CR or LF?
+                needTimeStamp = args.timestamps
+    except:
+        print('Exception on if arduinoPort.inWaiting() > 0:')
+        date_time = now.strftime("%H:%M:%S - ")
+        fLog.write(date_time)
+        fLog.write('## Exception on "if arduinoPort.inWaiting() > 0", attempt re-init...\n')
+        try:
+            arduinoPort = serial.Serial( inPortName, baudrate=args.baudrate )
+            time.sleep(1)
+        except Exception as inst:
+            print(type(inst))
+            print(inst.args)
+            print('## Something have the serial port to the Arduino open; like the Arduino IDE?\n')
             date_time = now.strftime("%H:%M:%S - ")
             fLog.write(date_time)
+            fLog.write('## Port Re-open failed!\n')
             #sys.stdout.flush()
-            print(date_time, end ='', flush=True)
-            #sys.stdout.flush()
-
-        if (ord(chr) == 0x0A):
-            print()         # cause flush
-        else:
-            sChar = chr.decode(encoding)
-            print(sChar, end ='', flush=True)
-            #sys.stdout.buffer.write(chr)
-
-        #sys.stdout.flush()
-        needTimeStamp = False
-        try:
-            sChar = chr.decode(encoding)
-        except:
-            sChar = '?' #.encode(encoding)
-
-        fLog.write(sChar)
-        if ((ord(chr) == 0x0D)  or (ord(chr) == 0x0A)): # CR or LF?
-            needTimeStamp = args.timestamps
+            time.sleep(3)
+            #sys.exit(0)
 
 
     if msvcrt.kbhit():

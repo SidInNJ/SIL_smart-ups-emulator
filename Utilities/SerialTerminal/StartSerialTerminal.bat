@@ -1,4 +1,5 @@
 @echo off
-C:\Users\user\AppData\Local\Programs\Python\Python311\python SerialTerminal.py
+Echo Starting .EXE at dist\SerialTerminal
+dist\SerialTerminal\SerialTerminal.exe
 pause
 
