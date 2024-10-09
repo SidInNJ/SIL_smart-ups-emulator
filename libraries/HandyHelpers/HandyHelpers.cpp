@@ -14,7 +14,7 @@ uint16_t HandyHelpers::anaFilter_ms(uint8_t AnaInChan, uint16_t ms) // 100ms: 6 
     uint32_t startTime = millis();
 
     #define RES_MUL 16
-    while ((millis() - startTime) < ms)
+    while ((millis() - startTime) < (uint32_t) ms)
     {
         readingsSum += analogRead(AnaInChan)*RES_MUL;
         readCount++;

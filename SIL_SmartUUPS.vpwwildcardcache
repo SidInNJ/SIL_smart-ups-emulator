@@ -1,0 +1,82 @@
+<WildcardCache version="1">
+	<Project File="SIL_SmartUUPS.vpj">
+		<Wildcards>
+			<W F="*.c" Wildcards="*.c;*.c++;*.cc;*.cp;*.cpp;*.cppm;*.cxx;*.h;*.h++;*.hh;*.hpp;*.hxx;*.inl;*.ixx;*.mpp;*.mxx;*.xpm" Excludes="*.tiff;*.tbz;*.pdb;*.avi;*.msi;*.cpgz;*.rpm;*.class;*.a;*.gif;*.taz;*.bin;*.jpg;*.svgz;*.exe;*.mp3;*.jar;*.ico;*.tif;*.txz;*.sl;*.png;*.jpeg;*.tar;*.Z;*.sta;*.xslx;*.gz;*.bz2;*.xz;*.mpeg;*.vpb;*.chm;*.dll;*.7z;*.lib;*.so;*.ex;*.tgz;*.war;*.vtg;*.docx;*.rar;*.o;*.wmv;*.cpio;*.zip;*.bmp;*.suo;*.xlsx;*.7zip;*.winmd;*.pdf;*.obj;*.z;*.tbz2;.git/;.svn/;.CVS/;SSCS/;.DS_Store;*.vpw;*.vpj;*.vpwhist;*.vpwhistxml;*.vpwhistu;*.vpwhistuxml;*.vpwwildcardcache" CompileExt="" ResourceExt="" Recurse="1" D="1"/>
+		</Wildcards>
+		<Files>
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogRP2040.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogNRF.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogKinetisL.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogAVR.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogESP32.h
+			libraries/TimerHelpers/TimerHelpers.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogESP32.cpp
+			libraries/ProjectDefs/ProjectDefs.h
+			SmartUpsEmulator/src/USBCore.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogNRF.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogESP8266.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogRP2040.h
+			libraries/ProjectDefs/ProjectDefs.cpp
+			SmartUpsEmulator/src/CDC.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogKinetisK.cpp
+			libraries/Adafruit_SleepyDog_Library/Adafruit_SleepyDog.h
+			libraries/Adafruit_SleepyDog_Library/Adafruit_SleepyDog.cpp
+			libraries/HandyHelpers/HandyHelpers.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogAVR.cpp
+			SmartUpsEmulator/src/USBDesc.h
+			SmartUpsEmulator/src/PluggableUSB.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogKinetisK.h
+			SmartUpsEmulator/src/USBCore.h
+			SmartUpsEmulator/src/USBAPI.h
+			libraries/HIDPowerDevice/src/HID/HID.h
+			SmartUpsEmulator/src/main.cpp
+			SmartUpsEmulator/src/PluggableUSB.cpp
+			libraries/TimerHelpers/TimerHelpers.cpp
+			libraries/HIDPowerDevice/src/HIDPowerDevice.h
+			libraries/HandyHelpers/HandyHelpers.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogKinetisL.h
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogESP8266.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogSAMD.cpp
+			libraries/HIDPowerDevice/src/HID/HID.cpp
+			libraries/Adafruit_SleepyDog_Library/utility/WatchdogSAMD.h
+			libraries/HIDPowerDevice/src/HIDPowerDevice.cpp
+		</Files>
+		<Folders>
+			133728029917462874 SmartUpsEmulator/VoltageDividerTest/VoltageDividerTest-backups/
+			133728029920775160 bin/
+			133728029917462874 Utilities/EEPromRestore/
+			133728029920858370 libraries/HIDPowerDevice/linux/
+			133728029917462874 SmartUpsEmulator/src/
+			133728029920888733 libraries/ProjectDefs/
+			133728029918733584 Utilities/SerialTerminal/dist/SerialTerminal/_internal/
+			133728029920888733 libraries/HandyHelpers/
+			133728029917462874 Utilities/EEPromToAllFF/
+			133728029917462874 SmtUpsEm_FactoryInit/
+			133728029920888733 libraries/TimerHelpers/
+			133728029917462874 SmartUpsEmulator/build/arduino.avr.leonardo/
+			133728029917452877 Debug/
+			133728029920843075 libraries/HIDPowerDevice/examples/
+			133728029920864011 libraries/HIDPowerDevice/src/
+			133728029920864011 libraries/HIDPowerDevice/
+			133728029917462874 SmartUpsEmulator/
+			133728029920888733 libraries/
+			133728029917462874 Utilities/SerialTerminal/dist/
+			133728029917619415 Utilities/SerialTerminal/dist/SerialTerminal/
+			133728029917462874 Logs/
+			133728029920796011 libraries/Adafruit_SleepyDog_Library/examples/
+			133728759549461305 Utilities/SerialTerminal/
+			133728029920848139 libraries/HIDPowerDevice/examples/UPS/
+			133728029917462874 SmtUpsEm_FactoryInit/build/
+			133728029920796011 libraries/Adafruit_SleepyDog_Library/examples/BasicUsage/
+			133728029917462874 SmtUpsEm_FactoryInit/build/arduino.avr.leonardo/
+			133728029920796011 libraries/Adafruit_SleepyDog_Library/examples/Sleep/
+			133728029920796011 libraries/Adafruit_SleepyDog_Library/
+			133728092802703649
+			133728029917462874 SmartUpsEmulator/VoltageDividerTest/
+			133728029920864011 libraries/HIDPowerDevice/src/HID/
+			133728029917462874 SmartUpsEmulator/build/
+			133728029920837920 libraries/Adafruit_SleepyDog_Library/utility/
+			133728029917462874 Utilities/
+		</Folders>
+	</Project>
+</WildcardCache>

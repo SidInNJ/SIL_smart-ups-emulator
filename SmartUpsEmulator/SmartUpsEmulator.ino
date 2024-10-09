@@ -197,6 +197,7 @@ Todo:
 
 bool doDebugPrints = true;  // Enable printing by default
 bool doVoltageGraphOutput = false;  // true for printing voltage CSV style for graphing
+bool doVoltageGraphOutputPrior = false;  // true for printing voltage CSV style for graphing
 
 // String constants
 const char STRING_DEVICECHEMISTRY[]PROGMEM = "PbAc";
@@ -251,7 +252,7 @@ int iRes = 0;
 
 // I/O Pin Usage
 #define PIN_LED_STATUS          13
-#define PIN_BATTERY_VOLTAGE     A5
+#define PIN_BATTERY_VOLTAGE     A4  // 2024-10-08 Change from A5 to A4 as A5 seemed pulled up
 #define PIN_INPUT_PWR_FAIL       4  // Short to ground to indicate loss of AC power / running on battery
 
 #define PIN_USBCDCNEEDED    2  // Used in main.cpp
@@ -651,7 +652,16 @@ void loop(void)
 #if USE_CSV_OUTPUT
                 if (doVoltageGraphOutput)
                 {
-                    SERIALPORT_PRINT(millis()/1000);            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
+                    if (doVoltageGraphOutputPrior != doVoltageGraphOutput)
+                    {
+                        SERIALPORT_PRINT("Seconds,");            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
+                        SERIALPORT_PRINT("VBat,");       // Volts
+                        SERIALPORT_PRINT("A2Dval,");                 // Bare analog reading
+                        SERIALPORT_PRINT("SecsLeft,");  // Run time left in seconds
+                        SERIALPORT_PRINT("%CapRemain,");       // Batter left i n%
+                        SERIALPORT_PRINTLN("Ch/Dis");  // Charging or Discharging
+                    }
+                    SERIALPORT_PRINT(millis() / 1000);            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(batVoltageInternal * StoreEE.battSysVMultiplier);       // Volts
                     SERIALPORT_PRINT(",");
@@ -663,6 +673,7 @@ void loop(void)
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINTLN(bCharging ? "C" : "D");  // Charging or Discharging
                 }
+                doVoltageGraphOutputPrior = doVoltageGraphOutput;
 #endif
                 //DBPRINTLN(F("Sent bat status to PC"));
                 //}
@@ -797,7 +808,7 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
     //batVoltageInternal = map(anaValue, StoreEE.calibPointLow.a2dValue, StoreEE.calibPointHigh.a2dValue, StoreEE.calibPointLow.voltage, StoreEE.calibPointHigh.voltage);
 
     #define RES_MUL 8
-    batVoltageInternal = map(anaValue*RES_MUL, StoreEE.calibPointLow.a2dValue*RES_MUL, StoreEE.calibPointHigh.a2dValue*RES_MUL, StoreEE.calibPointLow.voltage*RES_MUL, StoreEE.calibPointHigh.voltage*RES_MUL)/RES_MUL;
+    batVoltageInternal = (map(anaValue*RES_MUL, StoreEE.calibPointLow.a2dValue*RES_MUL, StoreEE.calibPointHigh.a2dValue*RES_MUL, StoreEE.calibPointLow.voltage*RES_MUL, StoreEE.calibPointHigh.voltage*RES_MUL) + (RES_MUL/2))/RES_MUL;
     if (batVoltageInternal < 0) batVoltageInternal = 0;
 
     // Determine if charging or discharging:
@@ -878,12 +889,15 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
 
         if ((iRunTimeToEmptyInternal < StoreEE.iRemainTimeLimit) || (batVoltageInternal < (int)StoreEE.BattParams[StoreEE.BatChem].shutdownVoltage))
         {
-            SERIALPORT_PRINT(F("Shutdown now! Rtte seconds="));
-            SERIALPORT_PRINT(iRunTimeToEmptyInternal);
-            SERIALPORT_PRINT(F(", BatV="));
-            SERIALPORT_PRINTLN(batVoltageInternal * StoreEE.battSysVMultiplier);
-            //SERIALPORT_Addr->flush();
-            //delay(500);
+            if (! doVoltageGraphOutput)     // Don't print this if we're in battery logging mode
+            {
+                SERIALPORT_PRINT(F("Shutdown now! Rtte seconds="));
+                SERIALPORT_PRINT(iRunTimeToEmptyInternal);
+                SERIALPORT_PRINT(F(", BatV="));
+                SERIALPORT_PRINTLN(batVoltageInternal * StoreEE.battSysVMultiplier);
+                //SERIALPORT_Addr->flush();
+                //delay(500);
+            }
 
             bitSet(iPresentStatusInternal, PRESENTSTATUS_RTLEXPIRED);
         }
@@ -1213,7 +1227,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of low voltage")   ))
                         {
                             StoreEE.calibPointLow.voltage = valVin100s / StoreEE.battSysVMultiplier;
-                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);
+                            StoreEE.calibPointLow.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 500);
                         }
                     }
                     break;
@@ -1223,7 +1237,7 @@ void processUserInput(char userIn[MAX_MENU_CHARS], uint8_t& indexUserIn, int inB
                         if (MH.updateFromUserInput(userIn+1, indexUserIn, inByte, 8000, valVin100s , F("V*100 of higher voltage")))
                         {
                             StoreEE.calibPointHigh.voltage = valVin100s / StoreEE.battSysVMultiplier;
-                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 100);
+                            StoreEE.calibPointHigh.a2dValue = MH.anaFilter_ms(PIN_BATTERY_VOLTAGE, 500);
                         }
                     }
                     break;
