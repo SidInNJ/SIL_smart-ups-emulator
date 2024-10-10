@@ -296,7 +296,10 @@ Status_HID_Comm status_HID = stat_Disabled;
 Stream *serPtr = SERIALPORT_Addr;
 int batVoltage = 1300;
 int batVoltageInternal = 1300;
+int batV_Smoothed = 1300;
 int anaValue = 0x1FF;   // Mid range of Analog input 
+#define SMOOTHING_DIVISOR   8
+#define SMOOTHING_NUMERATOR (SMOOTHING_DIVISOR - 1)
 
 Timer_ms statusLedTimerOn;
 Timer_ms statusLedTimerOff;
@@ -655,15 +658,15 @@ void loop(void)
                     if (doVoltageGraphOutputPrior != doVoltageGraphOutput)
                     {
                         SERIALPORT_PRINT("Seconds,");            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
-                        SERIALPORT_PRINT("VBat,");       // Volts
+                        SERIALPORT_PRINT("VBatSmooth,");       // Volts
                         SERIALPORT_PRINT("A2Dval,");                 // Bare analog reading
                         SERIALPORT_PRINT("SecsLeft,");  // Run time left in seconds
                         SERIALPORT_PRINT("%CapRemain,");       // Batter left i n%
-                        SERIALPORT_PRINTLN("Ch/Dis");  // Charging or Discharging
+                        SERIALPORT_PRINTLN("Ch/Dis,VBat");  // Charging or Discharging
                     }
                     SERIALPORT_PRINT(millis() / 1000);            // CSV format for graphing: Print seconds, voltage, Seconds left, % left
                     SERIALPORT_PRINT(",");
-                    SERIALPORT_PRINT(batVoltageInternal * StoreEE.battSysVMultiplier);       // Volts
+                    SERIALPORT_PRINT(batV_Smoothed * StoreEE.battSysVMultiplier);       // Volts
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(anaValue);                 // Bare analog reading
                     SERIALPORT_PRINT(",");
@@ -671,7 +674,8 @@ void loop(void)
                     SERIALPORT_PRINT(",");
                     SERIALPORT_PRINT(iRemainingInternal);       // Batter left i n%
                     SERIALPORT_PRINT(",");
-                    SERIALPORT_PRINTLN(bCharging ? "C" : "D");  // Charging or Discharging
+                    SERIALPORT_PRINT(bCharging ? "C," : "D,");  // Charging or Discharging
+                    SERIALPORT_PRINTLN(batVoltageInternal * StoreEE.battSysVMultiplier);       // Volts
                 }
                 doVoltageGraphOutputPrior = doVoltageGraphOutput;
 #endif
@@ -821,17 +825,29 @@ void UpdateBatteryStatus(bool &bCharging, bool &bACPresent, bool &bDischarging)
     if (firstPass)
     {
         recentVoltage = batVoltageInternal;
+        batV_Smoothed = batVoltageInternal;
         batVoltage = batVoltageInternal;
         firstPass = false;
     }
 
-    bool chargingTrendTemp = batVoltageInternal > recentVoltage ;
+    if (SMOOTHING_DIVISOR > 1)
+    {
+        batV_Smoothed = ((batV_Smoothed * SMOOTHING_NUMERATOR) + batVoltageInternal) / SMOOTHING_DIVISOR;
+    }
+    else
+    {
+        batV_Smoothed = batVoltageInternal;
+    }
 
-    if (ABS(recentVoltage - batVoltageInternal) > StoreEE.reportingHysteresis)
+    //bool chargingTrendTemp = batVoltageInternal > recentVoltage ;
+    bool chargingTrendTemp = batV_Smoothed > recentVoltage ;
+
+    //if (ABS(recentVoltage - batVoltageInternal) > StoreEE.reportingHysteresis)
+    if (ABS(recentVoltage - batV_Smoothed) > StoreEE.reportingHysteresis)
     {
         chargingTrend = chargingTrendTemp;
-        recentVoltage = batVoltageInternal;
-        batVoltage = batVoltageInternal;    // batVoltage gets reported externally
+        recentVoltage = batV_Smoothed;
+        batVoltage = batV_Smoothed;    // batVoltage gets reported externally
     }
 
     if (batVoltageInternal > (int16_t)StoreEE.BattParams[StoreEE.BatChem].isChargingVolts)

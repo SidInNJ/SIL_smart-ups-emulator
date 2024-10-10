@@ -141,8 +141,8 @@ void FactoryCompiledDefault(void)
     StoreEE.BattParams[BC_LFP].batFullVoltage     = 1360;   // Voltage in hundredths (V*100), Bat Full 
     StoreEE.BattParams[BC_LFP].warningVoltage     = 1250;   // V*100, Bat Empty                        
     StoreEE.BattParams[BC_LFP].shutdownVoltage    = 1240;   // V*100, Bat Empty                        
-    StoreEE.BattParams[BC_LFP].isChargingVolts    = 1365;   // V*100, Above this, must be charging     
-    StoreEE.BattParams[BC_LFP].isDisChargingVolts = 1200;   // V*100, Below this, must be discharging  
+    StoreEE.BattParams[BC_LFP].isChargingVolts    = 1425;   // V*100, Above this, must be charging     
+    StoreEE.BattParams[BC_LFP].isDisChargingVolts = 1290;   // V*100, Below this, must be discharging  
     //StoreEE.BattParams[BC_LFP].numCapacityPointsUsed = NUM_CAPACITY_POINTS;   // # of points in voltage/capacity curve
     StoreEE.BattParams[BC_LFP].iCalcdTimeToEmpty  = StoreEE.iAvgTimeToEmpty;   // Runtime calculated time to empty from full
     StoreEE.BattParams[BC_LFP].timeToEmptyCalcState = 0;   // 0:No calc done yet, 1:Partially done, 2:Pretty confident
