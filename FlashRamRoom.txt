@@ -113,3 +113,9 @@ turned CSV dump back on:
 Sketch uses 27886 bytes (97%) of program storage space. Maximum is 28672 bytes. (786 bytes of program space left)
 Global variables use 1497 bytes (58%) of dynamic memory, leaving 1063 bytes for local variables. Maximum is 2560 bytes.
 
+At JAARS: Smoothing of batV, better .CSV reporting
+Sketch uses 28524 bytes (99%) of program storage space. Maximum is 28672 bytes.
+Global variables use 1568 bytes (61%) of dynamic memory, leaving 992 bytes for local variables. Maximum is 2560 bytes.
+
+
+
